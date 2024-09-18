@@ -14,6 +14,7 @@
 #include <sys/types.h>
 
 #include "../include/utils.h"
+#include "../include/timer.h"
 
 #define PORT 1234
 #define PORT_LEN 5
@@ -22,8 +23,6 @@
 
 #define PEEK_IP_ADRESS "8.8.8.8"
 
-//TODO: add timer
-//TODO: check if there is a need to create mcAddress a second time
 //TODO: dynamic output
 //TODO: IPv6 support
 //TODO: user input address support
@@ -140,6 +139,9 @@ void sendAndRecvMessages(int writeSocket, int readSocket, const struct sockaddr_
 	timeout.tv_sec = 1;
 	timeout.tv_usec = 0;
 
+	Timer timer;
+	startTimer(&timer, 3);
+
 	while (1) {
 		FD_ZERO(&readFds);
 		FD_SET(readSocket, &readFds);
@@ -159,10 +161,11 @@ void sendAndRecvMessages(int writeSocket, int readSocket, const struct sockaddr_
 				printf("DETECTED COPY: %s\n", responseBuf);
 			} 
 		}
-
-		sendto(writeSocket, addressStr, strlen(addressStr), 0, (struct sockaddr*)sendAddr, sizeof(*sendAddr));
-		sleep(1);
-
+		
+		if (timerExpired(&timer)) {
+			sendto(writeSocket, addressStr, strlen(addressStr), 0, (struct sockaddr*)sendAddr, sizeof(*sendAddr));
+			resetTimer(&timer);
+		}
 	}
 }
 
