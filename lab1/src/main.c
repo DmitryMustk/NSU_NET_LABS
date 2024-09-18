@@ -1,4 +1,3 @@
-#include <asm-generic/socket.h>
 #include <netinet/in.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -11,7 +10,41 @@
 #include <sys/types.h>
 
 #define PORT 1234
+#define PORT_LEN 5
 
+#define BUF_SIZE 256
+
+#define PEEK_IP_ADRESS "8.8.8.8"
+
+//TODO: non blockin io
+//TODO: add timer
+//TODO: check if there is a need to create mcAdress a second time
+//TODO: dynamic output
+//TODO: IPv6 support
+
+void autoBindSocket(int sockfd) {
+	struct sockaddr_in peekAdress;
+	peekAdress.sin_family = AF_INET;
+	peekAdress.sin_port = htons(PORT);
+	inet_pton(AF_INET, PEEK_IP_ADRESS, &peekAdress.sin_addr);
+
+	const char* message = "PEEK_MESSAGE";
+	sendto(sockfd, message, strlen(message), 0, (struct sockaddr*)&peekAdress, sizeof(peekAdress));
+}
+
+int getAdressStr(struct sockaddr_in address, char* strBuf, size_t bufSize) {
+	//2 = ':' + '\0'
+	if (bufSize < INET_ADDRSTRLEN + PORT_LEN + 1) {
+		printf("faf");
+		return -1;
+	}
+
+	char ipStr[INET_ADDRSTRLEN];
+	inet_ntop(AF_INET, &address.sin_addr, ipStr, sizeof(ipStr));
+	snprintf(strBuf, bufSize, "%s:%d", ipStr, ntohs(address.sin_port));
+//	printf("ADRESS %s", strBuf);
+	return 0;
+}
 
 int main(void) {
 	const char* mcAdress = "224.0.0.5";
@@ -64,19 +97,29 @@ int main(void) {
 	sendAddr.sin_port = htons(PORT);
 	inet_pton(AF_INET, mcAdress, &sendAddr.sin_addr);
 
-	int uniqueID = rand() % 10000;
-	char message[256];
-	char buf[256];
-
-	snprintf(message, 256, "%d.UID Msg for multicast pidorast\n", uniqueID);
+	//GET UNIQUE ID OF PROCESS; ID = IP + PORT of writeSocket
+	autoBindSocket(writeSocket);
+	struct sockaddr_in uniqueAddress;
+	socklen_t uniqueAddressLen = sizeof(uniqueAddress);
+	if (getsockname(writeSocket, (struct sockaddr*)&uniqueAddress, &uniqueAddressLen) < 0) {
+		perror("Can't get name of writeSocket");
+		exit(EXIT_FAILURE);
+	}
 	
-	ssize_t strLen;
+	size_t addressBufLen = INET_ADDRSTRLEN + PORT_LEN + 1;
+	char adressStrBuf[addressBufLen];
+	getAdressStr(uniqueAddress, adressStrBuf, addressBufLen);
 
+	ssize_t responseLen;
+	char responseBuf[BUF_SIZE];
 	while (1) {
-		sendto(writeSocket, message, strlen(message), 0, (struct sockaddr*)&sendAddr, sizeof(addr));
+		sendto(writeSocket, adressStrBuf, strlen(adressStrBuf), 0, (struct sockaddr*)&sendAddr, sizeof(addr));
 		sleep(1);
-		//strLen = recvfrom(readSocket, buf, 256, 0, NULL, 0);
-
+		
+		responseLen = recvfrom(readSocket, responseBuf, BUF_SIZE, 0, NULL, 0);
+		if (strcmp(responseBuf, adressStrBuf) != 0) {
+			printf("DETECTED COPY: %s\n", responseBuf);
+		} 
 		//if (strstr(buf, "UID") && atoi(buf) != uniqueID) {
           //printf("Received message %s", message);
 
