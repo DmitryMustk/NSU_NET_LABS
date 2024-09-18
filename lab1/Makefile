@@ -49,3 +49,7 @@ $(BIN_DIR)/%.o: $(SRC_DIR)/%.c
 clean:
 	@echo "Clean..."
 	@rm -rf $(BIN_DIR)
+
+run: all
+	@echo "Running $(BIN_NAME)" ; echo
+	@./$(BIN_DIR)/$(BIN_NAME)
