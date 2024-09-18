@@ -2,6 +2,8 @@
 #include <netinet/in.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/select.h>
+#include <time.h>
 #include <unistd.h>
 
 #include <string.h>
@@ -19,7 +21,6 @@
 
 #define PEEK_IP_ADRESS "8.8.8.8"
 
-//TODO: non blockin io
 //TODO: add timer
 //TODO: check if there is a need to create mcAdress a second time
 //TODO: dynamic output
@@ -94,6 +95,12 @@ void joinMCGroup(int sockfd, const char* adress) {
 	}
 }
 
+void getSocketName(int sockfd, struct sockaddr_in* addr, socklen_t* addrSize) {
+	if (getsockname(sockfd, (struct sockaddr*)addr, addrSize) < 0) {
+		handleError("Can't get name of socket");
+	}
+} 
+
 int main(void) {
 	const char* mcAdress = "224.0.0.5";
 
@@ -119,24 +126,45 @@ int main(void) {
 
 	struct sockaddr_in uniqueAddress;
 	socklen_t uniqueAddressLen = sizeof(uniqueAddress);
-	if (getsockname(writeSocket, (struct sockaddr*)&uniqueAddress, &uniqueAddressLen) < 0) {
-		handleError("Can't get name of writeSocket");
-	}
-	
+	getSocketName(writeSocket, &uniqueAddress, &uniqueAddressLen);
+		
 	size_t addressBufLen = INET_ADDRSTRLEN + PORT_LEN + 1;
 	char adressStrBuf[addressBufLen];
 	getAdressStr(uniqueAddress, adressStrBuf, addressBufLen);
 
 	ssize_t responseLen;
 	char responseBuf[BUF_SIZE];
+
+	//Timeout for select
+	struct timeval timeout;
+	timeout.tv_sec = 1;
+	timeout.tv_usec = 0;
+
+	fd_set readFds;
+
 	while (1) {
+		FD_ZERO(&readFds);
+		FD_SET(readSocket, &readFds);
+
+		int activity = select(readSocket + 1, &readFds, NULL, NULL, &timeout);
+		if (activity < 0) {
+			handleError("select error");
+		} else if (activity != 0) {
+			if (FD_ISSET(readSocket, &readFds)) {
+				responseLen = recvfrom(readSocket, responseBuf, BUF_SIZE, 0, NULL, NULL);
+				if (responseLen < 0) {
+					handleError("Failed to receive message");
+				}
+				if (strcmp(responseBuf, adressStrBuf) != 0) {
+					printf("DETECTED COPY: %s\n", responseBuf);
+				} 
+
+			}
+		}
+
 		sendto(writeSocket, adressStrBuf, strlen(adressStrBuf), 0, (struct sockaddr*)&sendAddr, sizeof(sendAddr));
 		sleep(1);
 		
-		responseLen = recvfrom(readSocket, responseBuf, BUF_SIZE, 0, NULL, 0);
-		if (strcmp(responseBuf, adressStrBuf) != 0) {
-			printf("DETECTED COPY: %s\n", responseBuf);
-		} 
 	}
 	close(writeSocket);
 	close(readSocket);
