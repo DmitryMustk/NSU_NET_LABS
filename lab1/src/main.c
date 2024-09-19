@@ -18,14 +18,15 @@
 
 #define PORT 1234
 #define PORT_LEN 5
-
 #define BUF_SIZE 256
-
 #define PEEK_IP_ADRESS "8.8.8.8"
+#define MAX_COPIES 128
 
+#define COPY_TTL 3
 //TODO: dynamic output
 //TODO: IPv6 support
 //TODO: user input address support
+//TODO: dynamic lib for ipv4 and ipv6
 
 
 void sendAndRecvMessages(int writeSocket, int readSocket, const struct sockaddr_in* sendAddr, const char* addressStr);
@@ -129,6 +130,48 @@ void handleSocketCommunication(int readSocket, int writeSocket, const char* mcAd
 	sendAndRecvMessages(writeSocket, readSocket, &sendAddr, uniqueAddressStr);
 }
 
+typedef struct {
+	char name[INET_ADDRSTRLEN];
+	time_t lastSeen;
+} Copy;
+
+typedef struct {
+	int size;
+	Copy copiesArr[MAX_COPIES];
+} CopiesSet;
+
+void appendToCopiesSet(CopiesSet* copiesSet, Copy* copy) {
+	for (int i = 0; i < copiesSet->size; ++i) {
+		if (strcmp(copiesSet->copiesArr[i].name, copy->name) == 0) {
+			copiesSet->copiesArr[i].lastSeen = time(NULL);
+			return;
+		} 
+	}
+
+	copiesSet->copiesArr[copiesSet->size] = *copy;
+	copiesSet->size++;
+}
+
+void clearScreen(void) {
+	printf("\033[H\033[J");
+}
+
+void printCopiesSet(CopiesSet* copiesSet) {
+	clearScreen();
+	printf("Active copies:\n");
+	for (int i = 0; i < copiesSet->size; ++i) {
+		printf("%d. %s\n", i + 1, copiesSet->copiesArr[i].name);
+	}
+}
+
+void removeDeadCopies(CopiesSet* copiesSet) {
+	for (int i = 0; i < copiesSet->size; ++i) {
+		if (difftime(time(NULL), copiesSet->copiesArr[i].lastSeen) >= COPY_TTL) {
+			//TODO: remove copy from arr
+		}
+	}
+}
+
 void sendAndRecvMessages(int writeSocket, int readSocket, const struct sockaddr_in* sendAddr, const char* addressStr) {
 	ssize_t responseLen;
 	char responseBuf[BUF_SIZE];
@@ -141,6 +184,8 @@ void sendAndRecvMessages(int writeSocket, int readSocket, const struct sockaddr_
 
 	Timer timer;
 	startTimer(&timer, 3);
+
+	CopiesSet copiesSet = {0, {0}};
 
 	while (1) {
 		FD_ZERO(&readFds);
@@ -157,17 +202,24 @@ void sendAndRecvMessages(int writeSocket, int readSocket, const struct sockaddr_
 			}
 
 			if (strcmp(responseBuf, addressStr) != 0) {
-				printf("STRCMP RES: %d", strcmp(responseBuf, addressStr));
-				printf("DETECTED COPY: %s\n", responseBuf);
+				Copy newCopy = {{0}, time(NULL)};
+				memcpy(newCopy.name, responseBuf, responseLen);
+
+				appendToCopiesSet(&copiesSet, &newCopy);
 			} 
 		}
 		
 		if (timerExpired(&timer)) {
+			//removeDeadCopies(&copiesSet);
+			printCopiesSet(&copiesSet);
+			
 			sendto(writeSocket, addressStr, strlen(addressStr), 0, (struct sockaddr*)sendAddr, sizeof(*sendAddr));
 			resetTimer(&timer);
 		}
+
 	}
 }
+
 
 int main(void) {
 	const char* mcAddress = "224.0.0.5";
@@ -183,7 +235,7 @@ int main(void) {
 	socklen_t uniqueAddressLen = sizeof(uniqueAddress);
 	getSocketName(writeSocket, &uniqueAddress, &uniqueAddressLen);
 
-	char addressStr[INET6_ADDRSTRLEN + PORT_LEN + 1];
+	char addressStr[INET_ADDRSTRLEN + PORT_LEN + 1];
 	getAddressStr(uniqueAddress, addressStr, sizeof(addressStr));
 
 	printf("MY ADDRESS: %s\n", addressStr);
