@@ -15,6 +15,7 @@
 
 #include "../include/utils.h"
 #include "../include/timer.h"
+#include "../include/copies_set.h"
 
 #define PORT 1234
 #define PORT_LEN 5
@@ -23,6 +24,7 @@
 #define MAX_COPIES 128
 
 #define COPY_TTL 3
+
 //TODO: dynamic output
 //TODO: IPv6 support
 //TODO: user input address support
@@ -130,48 +132,6 @@ void handleSocketCommunication(int readSocket, int writeSocket, const char* mcAd
 	sendAndRecvMessages(writeSocket, readSocket, &sendAddr, uniqueAddressStr);
 }
 
-typedef struct {
-	char name[INET_ADDRSTRLEN];
-	time_t lastSeen;
-} Copy;
-
-typedef struct {
-	int size;
-	Copy copiesArr[MAX_COPIES];
-} CopiesSet;
-
-void appendToCopiesSet(CopiesSet* copiesSet, Copy* copy) {
-	for (int i = 0; i < copiesSet->size; ++i) {
-		if (strcmp(copiesSet->copiesArr[i].name, copy->name) == 0) {
-			copiesSet->copiesArr[i].lastSeen = time(NULL);
-			return;
-		} 
-	}
-
-	copiesSet->copiesArr[copiesSet->size] = *copy;
-	copiesSet->size++;
-}
-
-void clearScreen(void) {
-	printf("\033[H\033[J");
-}
-
-void printCopiesSet(CopiesSet* copiesSet) {
-	clearScreen();
-	printf("Active copies:\n");
-	for (int i = 0; i < copiesSet->size; ++i) {
-		printf("%d. %s\n", i + 1, copiesSet->copiesArr[i].name);
-	}
-}
-
-void removeDeadCopies(CopiesSet* copiesSet) {
-	for (int i = 0; i < copiesSet->size; ++i) {
-		if (difftime(time(NULL), copiesSet->copiesArr[i].lastSeen) >= COPY_TTL) {
-			//TODO: remove copy from arr
-		}
-	}
-}
-
 void sendAndRecvMessages(int writeSocket, int readSocket, const struct sockaddr_in* sendAddr, const char* addressStr) {
 	ssize_t responseLen;
 	char responseBuf[BUF_SIZE];
@@ -183,9 +143,9 @@ void sendAndRecvMessages(int writeSocket, int readSocket, const struct sockaddr_
 	timeout.tv_usec = 0;
 
 	Timer timer;
-	startTimer(&timer, 3);
+	startTimer(&timer, 2);
 
-	CopiesSet copiesSet = {0, {0}};
+	CopiesSet copiesSet = {0, MAX_COPIES, {0}};
 
 	while (1) {
 		FD_ZERO(&readFds);
@@ -205,15 +165,18 @@ void sendAndRecvMessages(int writeSocket, int readSocket, const struct sockaddr_
 				Copy newCopy = {{0}, time(NULL)};
 				memcpy(newCopy.name, responseBuf, responseLen);
 
+				
+				//printf("TRY TO APPEND %s COPY\n", newCopy.name);
 				appendToCopiesSet(&copiesSet, &newCopy);
 			} 
 		}
 		
 		if (timerExpired(&timer)) {
-			//removeDeadCopies(&copiesSet);
 			printCopiesSet(&copiesSet);
 			
 			sendto(writeSocket, addressStr, strlen(addressStr), 0, (struct sockaddr*)sendAddr, sizeof(*sendAddr));
+
+			removeDeadCopies(&copiesSet);
 			resetTimer(&timer);
 		}
 
