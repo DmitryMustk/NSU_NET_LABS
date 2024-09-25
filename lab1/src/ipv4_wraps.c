@@ -20,15 +20,13 @@ void configureAddress(struct sockaddr_in* addr, const char* address, in_port_t p
     }
 }
 
-void bindSocket(int sockfd, const char* address, in_port_t port) {
+void bindSocket(int sockfd, in_port_t port) {
     struct sockaddr_in addr;
     bzero(&addr, sizeof(addr));
     addr.sin_family = AF_INET;
     addr.sin_port = htons(port);
 	addr.sin_addr.s_addr = htonl(INADDR_ANY);
-    //if (inet_pton(AF_INET, address, &addr.sin_addr) <= 0) {
-       // handleError("Invalid address");
-    //}
+
     if (bind(sockfd, (struct sockaddr*)&addr, sizeof(addr)) != 0) {
 		handleError("Can't bind socket");
     }

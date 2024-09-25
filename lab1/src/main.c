@@ -1,5 +1,3 @@
-#include <asm-generic/socket.h>
-#include <bits/types/struct_timeval.h>
 #include <netinet/in.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -30,11 +28,6 @@
 
 #define COPY_TTL 3
 
-//TODO: dynamic lib for ipv4 and ipv6
-
-
-void sendAndRecvMessages(int writeSocket, int readSocket, const struct sockaddr* sendAddr, const char* addressStr, int isIPv6);
-
 int createSocket(int domain, int type, int protocol) {
 	int sockfd = socket(domain, type, protocol);
 	if (sockfd < 0) {
@@ -58,18 +51,6 @@ void getSocketName(int sockfd, struct sockaddr* addr, socklen_t* addrSize) {
 	}
 } 
 
-void handleSocketCommunication(int readSocket, int writeSocket, const char* mcAddress, const char* uniqueAddressStr, int isIPv6) {
-	if (isIPv6) {
-		struct sockaddr_in6 sendAddr;
-		configureAddress6(&sendAddr, mcAddress, PORT);
-		sendAndRecvMessages(writeSocket, readSocket, (struct sockaddr*)&sendAddr, uniqueAddressStr, isIPv6);
-		return;
-	}
-	struct sockaddr_in sendAddr;
-	configureAddress(&sendAddr, mcAddress, PORT);
-	sendAndRecvMessages(writeSocket, readSocket, (struct sockaddr*)&sendAddr, uniqueAddressStr, isIPv6);
-}
-
 void sendAndRecvMessages(int writeSocket, int readSocket, const struct sockaddr* sendAddr, const char* addressStr, int isIPv6) {
 	ssize_t responseLen;
 	char responseBuf[BUF_SIZE];
@@ -92,15 +73,14 @@ void sendAndRecvMessages(int writeSocket, int readSocket, const struct sockaddr*
 		int activity = select(readSocket + 1, &readFds, NULL, NULL, &timeout);
 		if (activity < 0) {
 			handleError("select error");
-		} else if (activity != 0 && FD_ISSET(readSocket, &readFds)) {
-			responseLen = recvfrom(readSocket, responseBuf, BUF_SIZE, 0, NULL, NULL);
+		} 
+		if (activity != 0 && FD_ISSET(readSocket, &readFds)) {
+			responseLen = recvfrom(readSocket, responseBuf, BUF_SIZE - 1, 0, NULL, NULL);
 			responseBuf[responseLen] = '\0';
 			if (responseLen < 0) {
 				handleError("Failed to receive message");
 			}
-			//printf("%s\n", responseBuf);
 			if (strcmp(responseBuf, addressStr) != 0) {
-				//printf("SRAVNILOVKA: %s  %s\n", responseBuf, addressStr);
 				Copy newCopy = {{0}, time(NULL)};
 				memcpy(newCopy.name, responseBuf, responseLen);
 
@@ -113,9 +93,10 @@ void sendAndRecvMessages(int writeSocket, int readSocket, const struct sockaddr*
 			if (isIPv6) {
 				addrLen = sizeof(*(struct sockaddr_in6*)sendAddr);
 			} 
+
 			printCopiesSet(&copiesSet);
 			if (sendto(writeSocket, addressStr, strlen(addressStr), 0, sendAddr, addrLen ) < 0) {
-				handleError("Can't send");
+				handleError("Failed to send message");
 			}
 
 			removeDeadCopies(&copiesSet);
@@ -125,6 +106,17 @@ void sendAndRecvMessages(int writeSocket, int readSocket, const struct sockaddr*
 	}
 }
 
+void handleSocketCommunication(int readSocket, int writeSocket, const char* mcAddress, const char* uniqueAddressStr, int isIPv6) {
+	if (isIPv6) {
+		struct sockaddr_in6 sendAddr;
+		configureAddress6(&sendAddr, mcAddress, PORT);
+		sendAndRecvMessages(writeSocket, readSocket, (struct sockaddr*)&sendAddr, uniqueAddressStr, isIPv6);
+		return;
+	}
+	struct sockaddr_in sendAddr;
+	configureAddress(&sendAddr, mcAddress, PORT);
+	sendAndRecvMessages(writeSocket, readSocket, (struct sockaddr*)&sendAddr, uniqueAddressStr, isIPv6);
+}
 
 void initSocket(int* sockfd, const char* address, in_port_t port, int isIPv6) {
 	if (isIPv6) {
@@ -142,7 +134,7 @@ void initSocket(int* sockfd, const char* address, in_port_t port, int isIPv6) {
 		bindSocket6(*sockfd, address, port);
 		return;
 	}
-	bindSocket(*sockfd, address, port);
+	bindSocket(*sockfd, port);
 }
 
 

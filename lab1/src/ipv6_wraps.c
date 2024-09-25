@@ -26,13 +26,10 @@ void bindSocket6(int sockfd, const char *address, in_port_t port) {
 	addr.sin6_family = AF_INET6;
 	addr.sin6_port = htons(port);
 	addr.sin6_addr = in6addr_any;
-	//if (inet_pton(AF_INET6, address, &addr.sin6_addr) <= 0) {
-	//	handleError("Invalid adress");
-	//}
 	printf("Binding to IPv6 address: %s:%d\n", address, ntohs(addr.sin6_port));
 
 	if (bind(sockfd, (struct sockaddr*)&addr, sizeof(addr)) != 0) {
-		handleError("Can't bind socketZZZZ");
+		handleError("Can't bind socket");
 	}
 }
 
