@@ -30,11 +30,10 @@
 
 #define COPY_TTL 3
 
-//TODO: IPv6 support
 //TODO: dynamic lib for ipv4 and ipv6
 
 
-void sendAndRecvMessages(int writeSocket, int readSocket, const struct sockaddr* sendAddr, const char* addressStr);
+void sendAndRecvMessages(int writeSocket, int readSocket, const struct sockaddr* sendAddr, const char* addressStr, int isIPv6);
 
 int createSocket(int domain, int type, int protocol) {
 	int sockfd = socket(domain, type, protocol);
@@ -63,15 +62,15 @@ void handleSocketCommunication(int readSocket, int writeSocket, const char* mcAd
 	if (isIPv6) {
 		struct sockaddr_in6 sendAddr;
 		configureAddress6(&sendAddr, mcAddress, PORT);
-		sendAndRecvMessages(writeSocket, readSocket, (struct sockaddr*)&sendAddr, uniqueAddressStr);
+		sendAndRecvMessages(writeSocket, readSocket, (struct sockaddr*)&sendAddr, uniqueAddressStr, isIPv6);
 		return;
 	}
 	struct sockaddr_in sendAddr;
 	configureAddress(&sendAddr, mcAddress, PORT);
-	sendAndRecvMessages(writeSocket, readSocket, (struct sockaddr*)&sendAddr, uniqueAddressStr);
+	sendAndRecvMessages(writeSocket, readSocket, (struct sockaddr*)&sendAddr, uniqueAddressStr, isIPv6);
 }
 
-void sendAndRecvMessages(int writeSocket, int readSocket, const struct sockaddr* sendAddr, const char* addressStr) {
+void sendAndRecvMessages(int writeSocket, int readSocket, const struct sockaddr* sendAddr, const char* addressStr, int isIPv6) {
 	ssize_t responseLen;
 	char responseBuf[BUF_SIZE];
 
@@ -101,6 +100,7 @@ void sendAndRecvMessages(int writeSocket, int readSocket, const struct sockaddr*
 			}
 			//printf("%s\n", responseBuf);
 			if (strcmp(responseBuf, addressStr) != 0) {
+				//printf("SRAVNILOVKA: %s  %s\n", responseBuf, addressStr);
 				Copy newCopy = {{0}, time(NULL)};
 				memcpy(newCopy.name, responseBuf, responseLen);
 
@@ -109,8 +109,14 @@ void sendAndRecvMessages(int writeSocket, int readSocket, const struct sockaddr*
 		}
 		
 		if (timerExpired(&timer)) {
+			socklen_t addrLen = sizeof(*sendAddr);
+			if (isIPv6) {
+				addrLen = sizeof(*(struct sockaddr_in6*)sendAddr);
+			} 
 			printCopiesSet(&copiesSet);
-			sendto(writeSocket, addressStr, strlen(addressStr), 0, sendAddr, sizeof(*sendAddr));
+			if (sendto(writeSocket, addressStr, strlen(addressStr), 0, sendAddr, addrLen ) < 0) {
+				handleError("Can't send");
+			}
 
 			removeDeadCopies(&copiesSet);
 			resetTimer(&timer);
@@ -133,8 +139,6 @@ void initSocket(int* sockfd, const char* address, in_port_t port, int isIPv6) {
 	}
 
 	if (isIPv6) {
-		//printf("JJJJJJ\n");
-		//bindSocket6(*sockfd, "::1", port);
 		bindSocket6(*sockfd, address, port);
 		return;
 	}
@@ -143,7 +147,6 @@ void initSocket(int* sockfd, const char* address, in_port_t port, int isIPv6) {
 
 
 int main(int argc, char** argv) {
-	//const char* mcAddress = "224.0.0.5";
 	int readSocket, writeSocket;
 	
 	if (argc < 2) {
@@ -152,8 +155,6 @@ int main(int argc, char** argv) {
 	}
 	const char* mcAddress = argv[1];
 	int isIPv6 = (strchr(mcAddress, ':') != NULL);
-	//printf("IPV6 %d\n", isIPv6);
-//	int isIPv6 = 0;
 
 	initSocket(&readSocket, mcAddress, PORT, isIPv6);
 	if (isIPv6) {
