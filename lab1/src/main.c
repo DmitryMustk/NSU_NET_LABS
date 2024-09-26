@@ -28,6 +28,9 @@
 
 #define COPY_TTL 3
 
+//TODO: dynamic libs for ipv4_wraps, ipv6_wraps
+//TODO: fix set append
+
 int createSocket(int domain, int type, int protocol) {
 	int sockfd = socket(domain, type, protocol);
 	if (sockfd < 0) {

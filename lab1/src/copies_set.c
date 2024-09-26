@@ -14,16 +14,17 @@ static void removeCopyFromCopiesSet(CopiesSet* copiesSet, int index) {
 }
 
 void appendToCopiesSet(CopiesSet* copiesSet, Copy* copy) {
-	if (copiesSet->size >= copiesSet->capacity - 1) {
-		return;
-	}
-
 	for (int i = 0; i < copiesSet->size; ++i) {
 		if (strcmp(copiesSet->copiesArr[i].name, copy->name) == 0) {
 			copiesSet->copiesArr[i].lastSeen = time(NULL);
 			return;
 		} 
 	}
+
+	if (copiesSet->size >= copiesSet->capacity - 1) {
+		return;
+	}
+
 	copiesSet->copiesArr[copiesSet->size] = *copy;
 	copiesSet->size++;
 }
