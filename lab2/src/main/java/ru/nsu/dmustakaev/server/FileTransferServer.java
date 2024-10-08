@@ -1,12 +1,11 @@
 package ru.nsu.dmustakaev.server;
 
 import ru.nsu.dmustakaev.server.exception.AcceptConnectionException;
+import ru.nsu.dmustakaev.server.exception.StartServerSocketException;
 
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.nio.file.Files;
-import java.nio.file.Paths;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.logging.Logger;
@@ -17,16 +16,23 @@ public class FileTransferServer {
     private static final Logger logger = Logger.getLogger(FileTransferServer.class.getName());
 
     private final int port;
-    private final ServerSocket serverSocket;
+    private ServerSocket serverSocket;
     private final ExecutorService threadPool;
 
-    public FileTransferServer(int port) throws IOException {
+    public FileTransferServer(int port) {
         this.port = port;
-        serverSocket = new ServerSocket(port);
+        startServerSocket();
         threadPool = Executors.newCachedThreadPool();
 
-        Files.createDirectory(Paths.get(UPLOAD_DIR));
         logger.info("Server started on port " + port);
+    }
+
+    private void startServerSocket() {
+        try {
+            serverSocket = new ServerSocket(port);
+        } catch (IOException e) {
+            throw new StartServerSocketException("Could not start server socket", e);
+        }
     }
 
     public void start() {
