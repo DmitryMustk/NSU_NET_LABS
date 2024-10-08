@@ -20,13 +20,12 @@ public class LocationService {
         this.locationConfig = locationConfig;
     }
 
-    public CompletableFuture<LocationsDto> getLocation(String query, Optional<Integer> limit) {
+    public CompletableFuture<LocationsDto> getLocation(String query) {
         return webClient.get()
                 .uri(uriBuilder -> uriBuilder.path("/geocode")
                         .queryParam("q", query)
                         .queryParam("locale", "ru")
                         .queryParam("key", locationConfig.getApiKey())
-                        .queryParamIfPresent("limit", limit)
                         .build())
                 .retrieve()
                 .bodyToMono(LocationsDto.class)

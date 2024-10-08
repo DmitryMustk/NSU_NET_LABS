@@ -11,7 +11,7 @@ public class FileTransferClient {
     private final String host;
     private final int port;
 
-    public FileTransferClient(String host, int port, String filepath) {
+    public FileTransferClient(String host, int port) {
         this.host = host;
         this.port = port;
     }

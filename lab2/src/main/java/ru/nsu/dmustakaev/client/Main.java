@@ -11,7 +11,7 @@ public class Main {
         int port = Integer.parseInt(args[1]);
         String filePath = args[2];
 
-        FileTransferClient client = new FileTransferClient(serverAddress, port, filePath);
+        FileTransferClient client = new FileTransferClient(serverAddress, port);
         client.transferFile(filePath);
     }
 }
