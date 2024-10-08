@@ -1,6 +1,6 @@
 package ru.nsu.dmustakaev.server;
 
-//start on 21:30
+//TODO: verify filename on server side
 public class Main {
     public static void main(String[] args) {
         if (args.length != 1) {
@@ -8,6 +8,7 @@ public class Main {
             return;
         }
         int port = Integer.parseInt(args[0]);
-
+        FileTransferServer server = new FileTransferServer(port);
+        server.start();
     }
 }

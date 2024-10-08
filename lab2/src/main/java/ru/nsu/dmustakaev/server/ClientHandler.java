@@ -18,15 +18,9 @@ public class ClientHandler {
             try (DataInputStream in = new DataInputStream(clientSocket.getInputStream());
                     DataOutputStream out = new DataOutputStream(clientSocket.getOutputStream())
             ) {
-                readFile(in, out, reportInterval);
+                readFile(in, out, reportInterval, uploadDir);
             } catch (IOException e) {
                 throw new ClientDataReadException("Can't read data from client", e);
-            } finally {
-                try {
-                    clientSocket.close();
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
             }
         };
     }
@@ -65,17 +59,18 @@ public class ClientHandler {
         }
     }
 
-    private static boolean isFilenameValid(String filename) {
-        return filename != null && filename.matches("^[a-zA-Z0-9_-]{1,64}$");
-    }
+//    private static boolean isFilenameValid(String filename) {
+//        return filename != null && filename.matches("^[a-zA-Z0-9_-]{1,64}$");
+//    }
 
-    private static void readFile(DataInputStream inputStream, DataOutputStream outputStream, int reportInterval) throws IOException {
+    private static void readFile(DataInputStream inputStream, DataOutputStream outputStream, int reportInterval, String uploadDir) throws IOException {
         String filename = inputStream.readUTF();
-        if (!isFilenameValid(filename)) {
-            throw new ClientDataReadException("Invalid filename");
-        }
+//        if (!isFilenameValid(filename)) {
+//            throw new ClientDataReadException("Invalid filename");
+//        }
         long fileSize = inputStream.readLong();
-        File file = new File(filename);
+
+        File file = new File(uploadDir, filename);
 
         try (FileOutputStream fileOutputStream = new FileOutputStream(file)) {
             transferFile(inputStream, fileOutputStream, fileSize, reportInterval);
