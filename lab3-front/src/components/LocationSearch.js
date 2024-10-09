@@ -1,14 +1,23 @@
 import React, { useState } from "react";
 import axios from "axios";
+import { useNavigate } from "react-router-dom";
 
 function LocationSearch({ onSearch }) {
 	const [query, setQuery] = useState('');
+	const navigate = useNavigate();
 
 	const handleSearch = async () => {
 		if (query) {
-			const response = await axios.get(`http://localhost:8080/api/locations?location=${query}`);
-			const locations = response.data.hits || [];
-			onSearch(locations);
+			try {
+				const response = await axios.get(`http://localhost:8080/api/locations?location=${query}`);
+				const locations = response.data.hits || [];
+				onSearch(locations);
+
+				// После успешного поиска перенаправляем на главную страницу
+				navigate('/');
+			} catch (error) {
+				console.error("Error fetching locations:", error);
+			}
 		}
 	};
 
@@ -42,14 +51,3 @@ export default LocationSearch;
 
 
 
-// return (
-// 	<div>
-// 		<input
-// 			type="text"
-// 			value={query}
-// 			onChange={(ev) => setQuery(ev.target.value)}
-// 			placeholder="Enter the place name"
-// 		/>
-// 		<button onClick={handleSearch}>Search</button>
-// 	</div>
-// );
