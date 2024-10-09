@@ -13,11 +13,16 @@ function LocationSearch({ onSearch }) {
 				const locations = response.data.hits || [];
 				onSearch(locations);
 
-				// После успешного поиска перенаправляем на главную страницу
 				navigate('/');
 			} catch (error) {
 				console.error("Error fetching locations:", error);
 			}
+		}
+	};
+
+	const handleKeyDown = (event) => {
+		if (event.key === 'Enter') {
+			handleSearch();
 		}
 	};
 
@@ -31,6 +36,7 @@ function LocationSearch({ onSearch }) {
 				aria-describedby="button-addon2"
 				value={query}
 				onChange={(ev) => setQuery(ev.target.value)}
+				onKeyDown={handleKeyDown}
 			/>
 			<div className="input-group-append">
 				<button
@@ -47,7 +53,3 @@ function LocationSearch({ onSearch }) {
 }
 
 export default LocationSearch;
-
-
-
-
