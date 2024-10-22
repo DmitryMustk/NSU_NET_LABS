@@ -18,7 +18,8 @@ public class ClientHandler {
         logger.info("New client connection: " + clientSocket.getRemoteSocketAddress());
         return () -> {
             try (DataInputStream in = new DataInputStream(clientSocket.getInputStream());
-                    DataOutputStream out = new DataOutputStream(clientSocket.getOutputStream())
+                    DataOutputStream out = new DataOutputStream(clientSocket.getOutputStream());
+                    clientSocket
             ) {
                 readFile(in, out, reportInterval, uploadDir);
             } catch (IOException e) {
@@ -49,6 +50,7 @@ public class ClientHandler {
                 bytesSinceLastReport.set(0);
             }
         }
+        reportSpeed(bytesSinceLastReport, totalReceived, System.currentTimeMillis(), startTime, lastReportTime);
     }
 
     private static void verifyTransfer(DataOutputStream outputStream, long expectedSize, long actualSize, String filename) throws IOException {
@@ -80,8 +82,8 @@ public class ClientHandler {
 
         try (FileOutputStream fileOutputStream = new FileOutputStream(file)) {
             transferFile(inputStream, fileOutputStream, fileSize, reportInterval);
-            verifyTransfer(outputStream, fileSize, fileSize, filename);
         }
+        verifyTransfer(outputStream, fileSize, fileSize, filename);
     }
 
     private static void reportSpeed(AtomicLong bytesSinceLastReport, long totalReceived,
