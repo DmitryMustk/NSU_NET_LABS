@@ -1,5 +1,6 @@
 package ru.nsu.dmustakaev.api.controllers;
 
+import lombok.AllArgsConstructor;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 import ru.nsu.dmustakaev.api.dto.weather.WeatherDto;
@@ -9,7 +10,7 @@ import java.util.concurrent.CompletableFuture;
 
 @RestController
 @RequestMapping("/api")
-@RequiredArgsConstructor
+@AllArgsConstructor
 public class WeatherController {
     private final WeatherService weatherService;
 

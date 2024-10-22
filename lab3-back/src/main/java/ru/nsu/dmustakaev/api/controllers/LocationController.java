@@ -1,5 +1,6 @@
 package ru.nsu.dmustakaev.api.controllers;
 
+import lombok.AllArgsConstructor;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 import ru.nsu.dmustakaev.api.dto.location.LocationsDto;
@@ -10,7 +11,7 @@ import java.util.concurrent.CompletableFuture;
 
 @RestController
 @RequestMapping("/api")
-@RequiredArgsConstructor
+@AllArgsConstructor
 public class LocationController {
     private final LocationService locationService;
 
