@@ -1,26 +1,42 @@
 package ru.nsu.dmustakaev.api.services;
 
+import lombok.AllArgsConstructor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
+import ru.nsu.dmustakaev.api.dto.location.LocationDetailsDto;
 import ru.nsu.dmustakaev.api.dto.location.LocationsDto;
+import ru.nsu.dmustakaev.api.dto.place.PlaceDetailsDto;
+import ru.nsu.dmustakaev.api.dto.place.PlacesDto;
+import ru.nsu.dmustakaev.api.dto.weather.WeatherDto;
 import ru.nsu.dmustakaev.config.LocationConfig;
 
-import java.util.Optional;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 
 @Service
+@AllArgsConstructor
 public class LocationService {
+    private final WeatherService weatherService;
+    private final PlacesService placesService;
     private final WebClient webClient;
     private final LocationConfig locationConfig;
 
     @Autowired
-    public LocationService(WebClient.Builder webClientBuilder, LocationConfig locationConfig) {
+    public LocationService(
+            WeatherService weatherService,
+            PlacesService placesService,
+            WebClient.Builder webClientBuilder,
+            LocationConfig locationConfig
+    ) {
+        this.weatherService = weatherService;
+        this.placesService = placesService;
         this.webClient = webClientBuilder.baseUrl(locationConfig.getApiUrl()).build();
         this.locationConfig = locationConfig;
     }
 
-    public CompletableFuture<LocationsDto> getLocation(String query) {
+    public CompletableFuture<LocationsDto> getLocations(String query) {
         return webClient.get()
                 .uri(uriBuilder -> uriBuilder.path("/geocode")
                         .queryParam("q", query)
@@ -31,4 +47,27 @@ public class LocationService {
                 .bodyToMono(LocationsDto.class)
                 .toFuture();
     }
+
+    public CompletableFuture<LocationDetailsDto> getLocationDetails(double lat, double lon) {
+        CompletableFuture<PlacesDto> placesFuture = placesService.getPlaces(lat, lon);
+        CompletableFuture<WeatherDto> weatherFuture = weatherService.getWeather(lat, lon);
+
+        return placesFuture.thenCombine(weatherFuture, (placesDto, weatherDto) -> {
+            List<CompletableFuture<PlaceDetailsDto>> placeDetailsFutures = placesDto.getResults().stream()
+                    .map(place -> placesService.getPlaceDetails(Long.parseLong(place.getId())))
+                    .toList();
+
+            return CompletableFuture.allOf(placeDetailsFutures.toArray(new CompletableFuture[0]))
+                    .thenApply(v -> placeDetailsFutures.stream()
+                            .map(CompletableFuture::join)
+                            .toList()
+                    ).thenApply(placeDetailsDtos ->
+                            LocationDetailsDto.builder()
+                                    .weather(weatherDto)
+                                    .places(placeDetailsDtos)
+                                    .build()
+                    );
+        }).thenCompose(locationDetailsDtoFuture -> locationDetailsDtoFuture);
+    }
 }
+

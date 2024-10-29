@@ -1,16 +1,12 @@
 package ru.nsu.dmustakaev.api.dto.weather;
 
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
+import lombok.*;
 
 import java.util.List;
 
-@Data
-@Builder
-@NoArgsConstructor
 @AllArgsConstructor
+@NoArgsConstructor
+@Getter
 public class WeatherDto {
     private Coordinates coord;
     private List<Weather> weather;

@@ -1,15 +1,12 @@
 package ru.nsu.dmustakaev.api.dto.location;
 
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
+import lombok.*;
 
-@Data
-@Builder
-@NoArgsConstructor
 @AllArgsConstructor
+@NoArgsConstructor
+@Getter
 public class Point {
     private double lat;
     private double lng;
 }
+
