@@ -15,7 +15,9 @@ public class WeatherService {
 
     @Autowired
     public WeatherService(WebClient.Builder webClient, WeatherConfig weatherConfig) {
-        this.webClient = webClient.baseUrl(weatherConfig.getApiUrl()).build();
+        this.webClient = webClient
+                .baseUrl(weatherConfig.getApiUrl())
+                .build();
         this.weatherConfig = weatherConfig;
     }
 

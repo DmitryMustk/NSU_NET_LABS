@@ -1,17 +1,11 @@
 package ru.nsu.dmustakaev.api.services;
 
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
-import org.springframework.http.codec.json.Jackson2JsonDecoder;
 import org.springframework.stereotype.Service;
-import org.springframework.util.MimeTypeUtils;
-import org.springframework.web.reactive.function.client.ExchangeStrategies;
 import org.springframework.web.reactive.function.client.WebClient;
 import ru.nsu.dmustakaev.api.dto.place.PlaceDetailsDto;
 import ru.nsu.dmustakaev.api.dto.place.PlacesDto;
+import ru.nsu.dmustakaev.config.PlaceConfig;
 
 import java.util.concurrent.CompletableFuture;
 
@@ -20,15 +14,9 @@ public class PlacesService {
     private final WebClient webClient;
 
     @Autowired
-    public PlacesService(WebClient.Builder webClientBuilder) {
-        this.webClient = webClientBuilder.baseUrl("https://kudago.com/public-api/v1.4/")
-                .defaultHeader(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE)
-                .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
-                .exchangeStrategies(ExchangeStrategies.builder().codecs(configurer ->{
-                    ObjectMapper mapper = new ObjectMapper();
-                    mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
-                    configurer.customCodecs().register(new Jackson2JsonDecoder(mapper, MimeTypeUtils.parseMimeType(MediaType.TEXT_PLAIN_VALUE)));
-                }).build())
+    public PlacesService(WebClient.Builder webClientBuilder, PlaceConfig placeConfig) {
+        this.webClient = webClientBuilder
+                .baseUrl(placeConfig.getApiUrl())
                 .build();
     }
 
