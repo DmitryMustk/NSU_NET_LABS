@@ -13,7 +13,6 @@ import ru.nsu.dmustakaev.config.LocationConfig;
 
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
 
 @Service
 @AllArgsConstructor

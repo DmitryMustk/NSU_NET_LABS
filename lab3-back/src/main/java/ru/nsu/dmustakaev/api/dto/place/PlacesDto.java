@@ -1,7 +1,6 @@
 package ru.nsu.dmustakaev.api.dto.place;
 
 import lombok.AllArgsConstructor;
-import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
