@@ -7,6 +7,6 @@ import lombok.*;
 @Getter
 public class PlaceDetailsDto {
     private String id;
-    private String name;
+    private String title;
     private String description;
 }
