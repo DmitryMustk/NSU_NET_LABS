@@ -4,51 +4,50 @@ import { useParams } from "react-router-dom";
 
 function LocationDetails() {
     const { lat, lon } = useParams();
-    const [weather, setWeather] = useState(null);
+    const [locationData, setLocationData] = useState(null);
 
     useEffect(() => {
-        const fetchWeather = async () => {
-            const response = await axios.get(`http://localhost:8080/api/weather?lat=${lat}&lon=${lon}`);
-            setWeather(response.data);
+        const fetchLocationDetails = async () => {
+            try {
+                const response = await axios.get(`http://localhost:8080/api/location-details?lat=${lat}&lon=${lon}`);
+                setLocationData(response.data);
+            } catch (error) {
+                console.error("Error fetching location details:", error);
+            }
         };
-        fetchWeather();
+        fetchLocationDetails();
     }, [lat, lon]);
 
-    const getWeatherEmoji = (description) => {
-        if (description.includes("clear")) return "☀️";
-        if (description.includes("clouds")) return "☁️";
-        if (description.includes("rain")) return "🌧️";
-        if (description.includes("thunderstorm")) return "⛈️";
-        if (description.includes("snow")) return "❄️";
-        if (description.includes("mist")) return "🌫️";
-        return "🌈";
-    };
+    const kelvinToCelsius = (tempK) => (tempK - 273.15).toFixed(2);
 
-    const kelvinToCelsius = (tempK) => {
-        return (tempK - 273.15).toFixed(2);
-    };
+    if (!locationData) return <div>Loading...</div>;
 
-    if (!weather) {
-        return <div>Loading...</div>;
-    }
-
-    const weatherEmoji = getWeatherEmoji(weather.weather[0].description);
+    const { weather, places } = locationData;
+    const weatherDescription = weather.weather[0].description;
+    const temperature = kelvinToCelsius(weather.main.temp);
+    const feelsLike = kelvinToCelsius(weather.main.feels_like);
 
     return (
-        <div className="container">
-            <h2>Weather in {weather.name}</h2>
-            <div className="card bg-dark text-light">
+        <div className="container my-4">
+            <h2 className="mb-4 text-center">Weather in {weather.name}</h2>
+            <div className="card text-light bg-secondary mb-4">
                 <div className="card-body">
-                    <h4 className="card-title">
-                        {weatherEmoji} Temperature: {kelvinToCelsius(weather.main.temp)}°C
-                    </h4>
-                    <p className="card-text">Feels like: {kelvinToCelsius(weather.main.feels_like)}°C</p>
-                    <p className="card-text">
-                        {weatherEmoji} Weather: {weather.weather[0].description}
-                    </p>
-                    <p className="card-text">Humidity: {weather.main.humidity}%</p>
+                    <h5 className="card-title">
+                        🌡️ Temperature: {temperature}°C (Feels like: {feelsLike}°C)
+                    </h5>
+                    <p className="card-text">🌥️ {weatherDescription.charAt(0).toUpperCase() + weatherDescription.slice(1)}</p>
                     <p className="card-text">Wind Speed: {weather.wind.speed} m/s</p>
                 </div>
+            </div>
+
+            <h3 className="text-center mb-3">Interesting Places to Visit</h3>
+            <div className="list-group">
+                {places.map((place) => (
+                    <div key={place.id} className="list-group-item bg-dark text-light">
+                        <h5>{place.title}</h5>
+                        <p>{place.description}</p>
+                    </div>
+                ))}
             </div>
         </div>
     );
