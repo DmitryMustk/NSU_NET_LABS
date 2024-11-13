@@ -35,7 +35,9 @@ public class LocationService {
         this.locationConfig = locationConfig;
     }
 
-    public CompletableFuture<LocationsDto> getLocations(String query) {
+    public CompletableFuture<LocationsDto> getLocations(
+            String query
+    ) {
         return webClient.get()
                 .uri(uriBuilder -> uriBuilder.path("/geocode")
                         .queryParam("q", query)
@@ -47,26 +49,31 @@ public class LocationService {
                 .toFuture();
     }
 
-    public CompletableFuture<LocationDetailsDto> getLocationDetails(double lat, double lon) {
+    public CompletableFuture<LocationDetailsDto> getLocationDetails(
+            double lat,
+            double lon
+    ) {
         CompletableFuture<PlacesDto> placesFuture = placesService.getPlaces(lat, lon);
         CompletableFuture<WeatherDto> weatherFuture = weatherService.getWeather(lat, lon);
 
-        return placesFuture.thenCombine(weatherFuture, (placesDto, weatherDto) -> {
-            List<CompletableFuture<PlaceDetailsDto>> placeDetailsFutures = placesDto.getResults().stream()
-                    .map(place -> placesService.getPlaceDetails(Long.parseLong(place.getId())))
-                    .toList();
+        CompletableFuture<List<PlaceDetailsDto>> placeDetailsFuture = placesFuture
+                .thenApply(placesDto -> placesDto
+                        .getResults()
+                        .stream()
+                        .map(placeDto -> placesService.getPlaceDetails(Long.parseLong(placeDto.getId())))
+                        .toList()
+                )
+                .thenCompose(futures -> CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
+                        .thenApply(v -> futures.stream()
+                                .map(CompletableFuture::join)
+                                .toList())
+                );
 
-            return CompletableFuture.allOf(placeDetailsFutures.toArray(new CompletableFuture[0]))
-                    .thenApply(v -> placeDetailsFutures.stream()
-                            .map(CompletableFuture::join)
-                            .toList()
-                    ).thenApply(placeDetailsDtos ->
-                            LocationDetailsDto.builder()
-                                    .weather(weatherDto)
-                                    .places(placeDetailsDtos)
-                                    .build()
-                    );
-        }).thenCompose(locationDetailsDtoFuture -> locationDetailsDtoFuture);
+        return placeDetailsFuture.thenCombine(weatherFuture, (places, weather) -> LocationDetailsDto.builder()
+                .places(places)
+                .weather(weather)
+                .build());
+
     }
 }
 

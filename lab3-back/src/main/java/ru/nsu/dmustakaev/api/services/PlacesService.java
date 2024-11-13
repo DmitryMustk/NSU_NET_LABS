@@ -14,13 +14,19 @@ public class PlacesService {
     private final WebClient webClient;
 
     @Autowired
-    public PlacesService(WebClient.Builder webClientBuilder, PlaceConfig placeConfig) {
+    public PlacesService(
+            WebClient.Builder webClientBuilder,
+            PlaceConfig placeConfig
+    ) {
         this.webClient = webClientBuilder
                 .baseUrl(placeConfig.getApiUrl())
                 .build();
     }
 
-    public CompletableFuture<PlacesDto> getPlaces(double lat, double lon) {
+    public CompletableFuture<PlacesDto> getPlaces(
+            double lat,
+            double lon
+    ) {
         return webClient.get()
                 .uri(uriBuilder -> uriBuilder.path("/places/")
                         .queryParam("fields", "id,title,description")
@@ -37,7 +43,9 @@ public class PlacesService {
     }
 
 
-    public CompletableFuture<PlaceDetailsDto> getPlaceDetails(long placeId) {
+    public CompletableFuture<PlaceDetailsDto> getPlaceDetails(
+            long placeId
+    ) {
         return webClient.get()
                 .uri(uriBuilder -> uriBuilder.path("/places/{placeId}/")
                         .queryParam("fields", "id,title,description")
