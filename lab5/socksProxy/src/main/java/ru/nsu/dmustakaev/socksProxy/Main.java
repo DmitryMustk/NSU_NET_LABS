@@ -4,7 +4,7 @@ import java.io.IOException;
 
 public class Main {
     public static void main(String[] args) throws IOException {
-        Proxy proxy = new Proxy(9000);
+        Proxy proxy = new Proxy("localhost", 9000);
         proxy.start();
     }
 }

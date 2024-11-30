@@ -16,12 +16,14 @@ public class Proxy {
 
     private final Selector selector;
     private final ServerSocketChannel serverSocketChannel;
+    private final InetSocketAddress adress;
 
-    public Proxy(int port) {
+    public Proxy(String hostname, int port) {
+        this.adress = new InetSocketAddress(hostname, port);
         try {
             selector = Selector.open();
             serverSocketChannel = ServerSocketChannel.open();
-            serverSocketChannel.bind(new InetSocketAddress("localhost", port));
+            serverSocketChannel.bind(adress);
             serverSocketChannel.configureBlocking(false);
             serverSocketChannel.register(selector, SelectionKey.OP_ACCEPT);
         } catch (IOException e) {
@@ -30,7 +32,7 @@ public class Proxy {
     }
 
     public void start() throws IOException {
-        log.info("Starting proxy...");
+        log.info("Starting proxy on %s port...".formatted(adress.getPort()));
         while (true) {
             selector.select();
             Set<SelectionKey> selectedKeys = selector.selectedKeys();
@@ -63,7 +65,7 @@ public class Proxy {
     private void handleAccept(SelectionKey key) throws IOException {
         SocketChannel clientSocketChannel = serverSocketChannel.accept();
         if (clientSocketChannel != null) {
-            log.info("Connected to proxy...");
+            log.info("Connected to proxy from %s".formatted(clientSocketChannel.socket().getInetAddress()));
             clientSocketChannel.configureBlocking(false);
             clientSocketChannel.register(selector, SelectionKey.OP_READ);
         }
