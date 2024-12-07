@@ -1,10 +1,9 @@
 #include "../include/server.h"
 #include "../include/logger.h"
+#include "../include/client_handler.h"
 
 #include <netinet/in.h>
 #include <string.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <unistd.h>
 #include <errno.h>
 #include <sys/socket.h>
@@ -29,7 +28,7 @@ static int setSocketNonblocking(int sockFD) {
 
 int startServer(in_port_t port, Logger *log) {
 	logger = log;
-	int serverFD = socket(AF_INET, SOCK_DGRAM, 0);
+	int serverFD = socket(AF_INET, SOCK_STREAM, 0);
 	if (serverFD < 0) {
 		logMessage(log, LOG_ERROR, "Failed to create server socket: %s", strerror(errno)); 
 		return ERROR;
@@ -51,7 +50,7 @@ int startServer(in_port_t port, Logger *log) {
 		return ERROR;
 	}
 
-	if (listen(serverFD, SOMAXCONN) < 0) {
+	if (listen(serverFD, 10) < 0) {
 		logMessage(log, LOG_ERROR, "Failed to listen socket: %s", strerror(errno));
 		close(serverFD);
 		return ERROR;
@@ -84,9 +83,11 @@ int startServer(in_port_t port, Logger *log) {
 
 		for (int i = 0; i < eventsCount; ++i) {
 			if (events[i].data.fd == serverFD) {
-				acceptClient(serverFD, epollFD);
+				logMessage(log, LOG_INFO, "Accepting new client...");
+				acceptClient(serverFD, epollFD, log);
 			} else {
-				handleClient(events[i].data.fd, epollFD);
+				logMessage(log, LOG_DEBUG, "Handling client");
+				handleClient(events[i].data.ptr, epollFD, log);
 			}
 		}
 	}

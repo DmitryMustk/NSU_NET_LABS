@@ -1,6 +1,8 @@
 #include "../include/logger.h"
 
 #include <stdarg.h>
+#include <stdint.h>
+#include <string.h>
 #include <stdlib.h>
 
 #define COLOR_RESET   "\033[0m"
@@ -73,6 +75,19 @@ void logMessage(Logger* logger, LogLevel level, const char* format, ...) {
     }
 
     pthread_mutex_unlock(&logger->mutex);
+}
+
+void logHexMessage(Logger *log, LogLevel level, const uint8_t *data, size_t length) {
+    char* hexBuffer = malloc(6 * length + 1); // byte -> "' ' 0xXX + ' '"
+    memset(hexBuffer, 0, 6 * length + 1);
+    size_t pos = 0;
+
+    for (size_t i = 0; i < length; ++i) {
+        pos += snprintf(hexBuffer + pos, 6, "0x%02X ", data[i]);
+    }
+
+    logMessage(log, level, "Message of length %d from client (hex): %s", length, hexBuffer);
+    free(hexBuffer);
 }
 
 void closeLogger(Logger* logger) {

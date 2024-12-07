@@ -2,6 +2,7 @@
 #define LOGGER_H
 
 #include <stdio.h>
+#include <stdint.h>
 #include <time.h>
 #include <pthread.h>
 
@@ -20,6 +21,7 @@ typedef struct {
 
 Logger* createLogger(const char* filename, LogLevel level, int toConsole);
 void logMessage(Logger* logger, LogLevel level, const char* format, ...);
+void logHexMessage(Logger *log, LogLevel level, const uint8_t *data, size_t length);
 void closeLogger(Logger* logger);
 
 #endif // LOGGER_H
