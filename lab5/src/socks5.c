@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <netinet/in.h>
 #include <sys/socket.h>
 #include <sys/epoll.h>
 #include <unistd.h>
@@ -22,12 +23,68 @@
 #define SOCKS5_GENERAL_FAILURE 0x01
 
 #define RESPONSE_LEN 10
-#define BUF_SIZE     512
+#define BUF_SIZE     512000
 
 static int sendSocks5Response(int clientFD, uint8_t status) {
     uint8_t response[RESPONSE_LEN] = {SOCKS5_VERSION, status, 0x00, ADDR_TYPE_IPV4, 0, 0, 0, 0, 0, 0};
     return send(clientFD, response, RESPONSE_LEN, 0); 
 }
+
+static int sendSocks5ConnectResponse(ClientContext* clientContext, Logger* log) {
+    // Формируем ответ в формате SOCKS5
+    uint8_t response[10] = {SOCKS5_VERSION, SOCKS5_SUCCESS, 0x00, ADDR_TYPE_IPV4};
+    struct sockaddr_in localAddr;
+    socklen_t localAddrLen = sizeof(localAddr);
+
+    // Получаем локальный адрес и порт, привязанные к сокету
+    if (getsockname(clientContext->serverFD, (struct sockaddr*)&localAddr, &localAddrLen) < 0) {
+        logMessage(log, LOG_ERROR, "Failed to retrieve socket address: %s", strerror(errno));
+        sendSocks5Response(clientContext->fd, SOCKS5_GENERAL_FAILURE);
+        close(clientContext->serverFD);
+        return -1;
+    }
+
+    // Копируем адрес и порт в ответ
+    memcpy(&response[4], &localAddr.sin_addr, 4);  // BND.ADDR (IPv4, 4 байта)
+    memcpy(&response[8], &localAddr.sin_port, 2); // BND.PORT (2 байта, в сетевом порядке)
+
+    // Отправляем ответ клиенту
+    if (send(clientContext->fd, response, sizeof(response), 0) < 0) {
+        logMessage(log, LOG_ERROR, "Failed to send SOCKS5 response: %s", strerror(errno));
+        close(clientContext->serverFD);
+        return -1;
+    }
+    
+    return 0;
+}
+
+static int forwardTraffic(ClientContext *clientContext, Logger* log) {
+    char buffer[BUF_SIZE];
+    ssize_t bytes;
+
+    // Forward data from client to server
+    if ((bytes = recv(clientContext->fd, buffer, sizeof(buffer), 0)) > 0) {
+        logMessage(log, LOG_DEBUG, "Client request: %s", buffer);
+        if (send(clientContext->serverFD, buffer, bytes, 0) <= 0) {
+            return -1;
+        }
+    } else if (bytes == 0 || (bytes < 0 && errno != EAGAIN)) {
+        return -1; // Error or client disconnected
+    }
+
+    // Forward data from server to client
+    if ((bytes = recv(clientContext->serverFD, buffer, sizeof(buffer), 0)) > 0) {
+        logMessage(log, LOG_DEBUG, "Server response: %s", buffer);
+        if (send(clientContext->fd, buffer, bytes, 0) <= 0) {
+            return -1;
+        }
+    } else if (bytes == 0 || (bytes < 0 && errno != EAGAIN)) {
+        return -1; // Error or server disconnected
+    }
+
+    return 0;
+}
+
 
 static int processHelloRequest(ClientContext* clientContext, Logger* log) {
     uint8_t buffer[BUF_SIZE];
@@ -73,6 +130,8 @@ static int processHelloRequest(ClientContext* clientContext, Logger* log) {
     return 0;
 }
 
+
+
 static int processConnectionRequest(ClientContext* clientContext, Logger* log) {
     uint8_t buffer[BUF_SIZE];
     ssize_t bytesReceived = recv(clientContext->fd, buffer, sizeof(buffer), 0);
@@ -100,6 +159,39 @@ static int processConnectionRequest(ClientContext* clientContext, Logger* log) {
     }
 
     logMessage(log, LOG_DEBUG, "Target addr: %s:%d", targetAddr, targetPort);
+    clientContext->state = STATE_CONNECTION;
+
+    int targetServerFD = socket(AF_INET, SOCK_STREAM, 0);
+    if (targetServerFD < 0) {
+        logMessage(log, LOG_ERROR, "Failed to create target server socket: %s", strerror(errno));
+        sendSocks5Response(clientContext->fd, SOCKS5_GENERAL_FAILURE);
+        return -1;
+    }
+
+    struct sockaddr_in targetServerAddr;
+    memset(&targetServerAddr, 0, sizeof(targetServerAddr));
+    targetServerAddr.sin_family = AF_INET;
+    targetServerAddr.sin_port = htons(targetPort);
+    if (inet_pton(AF_INET, targetAddr, &targetServerAddr.sin_addr) <= 0) {
+        logMessage(log, LOG_ERROR, "Invalid target address: %s", strerror(errno));
+        sendSocks5Response(clientContext->fd, SOCKS5_GENERAL_FAILURE);
+        close(targetServerFD);
+        return -1;
+    }
+
+    if (connect(targetServerFD, (struct sockaddr*)&targetServerAddr, sizeof(targetServerAddr)) < 0) {
+        logMessage(log, LOG_ERROR, "Failed to connect to target: %s", strerror(errno));
+        sendSocks5Response(clientContext->fd, SOCKS5_GENERAL_FAILURE);
+        close(targetServerFD);
+        return -1;
+    } 
+
+    logMessage(log, LOG_INFO, "Connected to target server %s:d", targetAddr, targetPort);
+
+
+    clientContext->serverFD = targetServerFD;
+    clientContext->state = STATE_FORWARDING;
+    sendSocks5ConnectResponse(clientContext, log);
     return 0;
 }
 
@@ -110,6 +202,16 @@ int processSocks5(ClientContext* clientContext, Logger *log) {
     else if (clientContext->state == STATE_HELLO) {
         return processConnectionRequest(clientContext, log);
     }
-    return 0;
+    else if (clientContext->state == STATE_FORWARDING) {
+        forwardTraffic(clientContext, log);
+    }
 
+    uint8_t buffer[BUF_SIZE];
+    ssize_t bytesReceived = recv(clientContext->fd, buffer, sizeof(buffer), 0);
+	if (bytesReceived <= 0) {
+        return -1;
+    }
+	logHexMessage(log, LOG_DEBUG, buffer, bytesReceived);
+
+    return 0;
 }

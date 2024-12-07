@@ -34,6 +34,13 @@ int startServer(in_port_t port, Logger *log) {
 		return ERROR;
 	}
 
+	int opt = 1;
+	if (setsockopt(serverFD, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
+	    logMessage(log, LOG_ERROR, "setsockopt(SO_REUSEADDR) failed");
+	    close(serverFD);
+	    return -1;
+	}
+
 	if(setSocketNonblocking(serverFD) == ERROR) {
 		logMessage(log, LOG_ERROR, "Can't set serverFD nonblocking: %s", strerror(errno));
 		return ERROR;

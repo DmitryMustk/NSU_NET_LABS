@@ -5,11 +5,12 @@ typedef enum {
     STATE_NONE,
     STATE_HELLO,
     STATE_CONNECTION,
-    STATE_ESTABLISHED,
+    STATE_FORWARDING,
 } ClientState;
 
 typedef struct {
     int fd;
+    int serverFD;
     ClientState state;
 } ClientContext;
 

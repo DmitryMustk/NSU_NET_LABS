@@ -10,6 +10,7 @@ ClientContext* createClientContext(int fd) {
         return NULL;
     }
     clientContext->fd = fd;
+    clientContext->serverFD = 0;
     clientContext->state = STATE_NONE;
     return clientContext;
 }
@@ -19,5 +20,6 @@ void freeClientContext(ClientContext * clientContext) {
         return;
     }
     close(clientContext->fd);
+    close(clientContext->serverFD);
     free(clientContext);
 }
