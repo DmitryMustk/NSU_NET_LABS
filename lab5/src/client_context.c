@@ -5,24 +5,38 @@
 #include <unistd.h>
 #include <string.h>
 
-uint32_t globalId = 0;
-
 ClientContext* createClientContext(int fd) {
     ClientContext* clientContext = malloc(sizeof(ClientContext));
-    if (!clientContext) {
+    if (clientContext == NULL) {
         return NULL;
     }
 
-    clientContext->id = globalId++;
     clientContext->fd = fd;
     clientContext->serverFD = 0;
-    clientContext->isServerFDPolling = 0;
     clientContext->state = STATE_NONE;
     return clientContext;
 }
 
+EpollDataWrapper* createEpollDataWrapper(ClientContext* clientContext, SocketType type) {
+    EpollDataWrapper* epollDataWrapper = malloc(sizeof(EpollDataWrapper));
+    if (epollDataWrapper == NULL) {
+        return NULL;
+    }
+    epollDataWrapper->clientContextPtr = clientContext;
+    epollDataWrapper->type = type;
+    return epollDataWrapper;
+}
+
+void freeEpollDataWrapper(EpollDataWrapper* epollDataWrapper) {
+    if (epollDataWrapper == NULL) {
+        return;
+    }
+    freeClientContext(epollDataWrapper->clientContextPtr);
+    free(epollDataWrapper);
+}
+
 void freeClientContext(ClientContext * clientContext) {
-    if (!clientContext) {
+    if (clientContext == NULL) {
         return;
     }
     close(clientContext->fd);

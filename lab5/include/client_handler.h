@@ -4,7 +4,8 @@
 #include "logger.h"
 #include "client_context.h"
 
-void acceptClient(int serverFD, int epollFD, Logger* log);
-void handleClient(ClientContext* clientContext, int epollFD, Logger* log);
+int acceptClient(int serverFD, int epollFD, Logger* log);
+int forwardTrafficFromClient(ClientContext* clientContext, Logger* log);
+int forwardTrafficFromServer(ClientContext* clientContext, Logger* log);
 
 #endif //CLIENT_HANDLER_H

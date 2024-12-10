@@ -6,6 +6,8 @@
 
 #define MAX_PORT_VALUE 65535
 
+// TODO: DNS
+
 int main(int argc, char** argv) {
 	Logger* log = createLogger("log.txt", LOG_DEBUG, 1);
 	if (argc != 2) {
