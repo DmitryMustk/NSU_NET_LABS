@@ -1,6 +1,8 @@
 #ifndef CLIENT_CONTEXT_H
 #define CLIENT_CONTEXT_H
 
+#include <stdint.h>
+
 typedef enum {
     STATE_NONE,
     STATE_HELLO,
@@ -9,6 +11,7 @@ typedef enum {
 } ClientState;
 
 typedef struct {
+    uint32_t id;
     int fd;
     int serverFD;
     int isServerFDPolling;

@@ -1,6 +1,7 @@
 #include "../include/server.h"
 #include "../include/logger.h"
 #include "../include/client_handler.h"
+#include "../include/socks5.h"
 
 #include <netinet/in.h>
 #include <string.h>
@@ -92,10 +93,19 @@ int startServer(in_port_t port, Logger *log) {
 			if (events[i].data.fd == serverFD) {
 				logMessage(log, LOG_INFO, "Accepting new client...");
 				acceptClient(serverFD, epollFD, log);
-			} else {
-				logMessage(log, LOG_DEBUG, "Handling client");
-				handleClient(events[i].data.ptr, epollFD, log);
 			}
+			else if (events[i].data.ptr != NULL) {
+				logMessage(log, LOG_DEBUG, "New client event detected");
+				EpollDataWrapper* wrapper = events[i].data.ptr;
+				if (wrapper->clientContextPtr->state != STATE_FORWARDING) {
+					handleClientState(wrapper->clientContextPtr, epollFD, log);
+				} else if (wrapper->type == CLIENT) {
+					logMessage(log, LOG_DEBUG, "Start forwarding data from client");
+					forwardTrafficFromClient(wrapper->clientContextPtr, log);
+				} else if (wrapper->type == TARGET_SERVER) {
+					forwardTrafficFromServer(wrapper->clientContextPtr, log);
+				}
+			} 
 		}
 	}
 

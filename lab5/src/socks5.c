@@ -1,6 +1,7 @@
 #include "../include/socks5.h"
 #include "../include/logger.h"
 #include "../include/client_context.h"
+#include "../include/server.h"
 
 #include <arpa/inet.h>
 #include <assert.h>
@@ -25,7 +26,7 @@
 #define RESPONSE_LEN 10
 #define BUF_SIZE 16384
 
-#define MAX_EVENTS 256
+#define MAX_EVENTS 64
 
 static int sendSocks5Response(int clientFD, uint8_t status) {
     uint8_t response[RESPONSE_LEN] = {SOCKS5_VERSION, status, 0x00, ADDR_TYPE_IPV4, 0, 0, 0, 0, 0, 0};
@@ -54,6 +55,16 @@ static int sendSocks5ConnectResponse(ClientContext* clientContext, Logger* log) 
     }
     
     return 0;
+}
+
+static int setSocketNonblocking(int sockFD, Logger* log) {
+	int flags = fcntl(sockFD, F_GETFL, 0);
+	if (flags == -1) {
+		logMessage(log, LOG_ERROR, "Can't get flags of sockFD: %s", strerror(errno));
+		return -1;
+	}
+
+	return fcntl(sockFD, F_SETFL, flags | O_NONBLOCK);
 }
 
 static int processHelloRequest(ClientContext* clientContext, Logger* log) {
@@ -123,7 +134,7 @@ static int processConnectionRequest(ClientContext* clientContext, Logger* log) {
         targetAddr[domainLen] = '\0';
         targetPort = ntohs(*(uint16_t *)&buffer[5 + domainLen]);
     } else {
-        // IPv6 is not supported
+        logMessage(log, LOG_ERROR, "IPv6 is not supported");
         return sendSocks5Response(clientContext->fd, SOCKS5_GENERAL_FAILURE);
     }
 
@@ -136,6 +147,11 @@ static int processConnectionRequest(ClientContext* clientContext, Logger* log) {
         sendSocks5Response(clientContext->fd, SOCKS5_GENERAL_FAILURE);
         return -1;
     }
+
+    // if(setSocketNonblocking(targetServerFD, log) == -1) {
+	// 	logMessage(log, LOG_ERROR, "Can't set serverFD nonblocking: %s", strerror(errno));
+	// 	return -1;
+	// }
 
     struct sockaddr_in targetServerAddr;
     memset(&targetServerAddr, 0, sizeof(targetServerAddr));
@@ -155,8 +171,7 @@ static int processConnectionRequest(ClientContext* clientContext, Logger* log) {
         return -1;
     } 
 
-    logMessage(log, LOG_INFO, "Connected to target server %s:d", targetAddr, targetPort);
-
+    logMessage(log, LOG_INFO, "Connected to target server %s:%d", targetAddr, targetPort);
 
     clientContext->serverFD = targetServerFD;
     clientContext->state = STATE_FORWARDING;
@@ -164,7 +179,7 @@ static int processConnectionRequest(ClientContext* clientContext, Logger* log) {
     return 0;
 }
 
-static int forwardTrafficFromClient(ClientContext* clientContext, Logger* log) {
+int forwardTrafficFromClient(ClientContext* clientContext, Logger* log) {
     char buf[BUF_SIZE];
     ssize_t bytesReceived = recv(clientContext->fd, buf, sizeof(buf), 0);
     if (bytesReceived == 0) {
@@ -188,7 +203,7 @@ static int forwardTrafficFromClient(ClientContext* clientContext, Logger* log) {
     return 0;
 }
 
-static int forwardTrafficFromServer(ClientContext* clientContext, Logger* log) {
+int forwardTrafficFromServer(ClientContext* clientContext, Logger* log) {
     char buf[BUF_SIZE];
     ssize_t bytesReceived = recv(clientContext->serverFD, buf, sizeof(buf), 0);
     if (bytesReceived == 0) {
@@ -213,88 +228,101 @@ static int forwardTrafficFromServer(ClientContext* clientContext, Logger* log) {
     return 0;
 }
 
-static int handleClientState(ClientContext* clientContext, Logger* log) {
+int handleClientState(ClientContext* clientContext, int epollFD, Logger* log) {
     if (clientContext->state == STATE_NONE) {
         return processHelloRequest(clientContext, log);
     } else if (clientContext->state == STATE_HELLO) {
-        return processConnectionRequest(clientContext, log);
-    } else if (clientContext->state == STATE_FORWARDING) {
-        return forwardTrafficFromClient(clientContext, log);
-    }
+        if (processConnectionRequest(clientContext, log) == -1) {
+            return -1;
+        }
+        
+        EpollDataWrapper* wrap = malloc(sizeof(EpollDataWrapper));
+        wrap->type = TARGET_SERVER;
+        wrap->clientContextPtr = clientContext;
 
+        struct epoll_event targetServerEvent;
+        targetServerEvent.events = EPOLLIN;
+        targetServerEvent.data.ptr = wrap;
+
+        if (epoll_ctl(epollFD, EPOLL_CTL_ADD, clientContext->serverFD, &targetServerEvent) == -1) {
+            logMessage(log, LOG_ERROR, "Failed to register target server fd with epoll: %s", strerror(errno));
+            close(epollFD);
+            return -1;
+        }
+        return 0;
+    } 
     logMessage(log, LOG_ERROR, "Unknown state: %d", clientContext->state);
     return -1;
 }
 
-int processSocks5(ClientContext* clientContext, Logger *log) {
-    int epollFD = epoll_create1(0);
-    if (epollFD == -1) {
-        logMessage(log, LOG_ERROR, "Failed to create epoll instance: %s", strerror(errno));
-        return -1;
-    }
+//int processSocks5(ClientContext* clientContext, Logger *log) {
+    // int epollFD = epoll_create1(0);
+    // if (epollFD == -1) {
+    //     logMessage(log, LOG_ERROR, "Failed to create epoll instance: %s", strerror(errno));
+    //     return -1;
+    // }
 
     // Add client socket as a epoll event to set
-    struct epoll_event epollEvent;
-    epollEvent.events = EPOLLIN | EPOLLET; // read with edge-trigerred handling
-    epollEvent.data.fd = clientContext->fd;
-    if (epoll_ctl(epollFD, EPOLL_CTL_ADD, clientContext->fd, &epollEvent) == -1) {
-        logMessage(log, LOG_ERROR, "Failed to register client fd with epoll: %s", strerror(errno));
-        close(epollFD);
-        return -1;
-    }
+    // struct epoll_event epollEvent;
+    // epollEvent.events = EPOLLIN; // read with edge-trigerred handling
+    // epollEvent.data.fd = clientContext->fd;
+    // if (epoll_ctl(epollFD, EPOLL_CTL_ADD, clientContext->fd, &epollEvent) == -1) {
+    //     logMessage(log, LOG_ERROR, "Failed to register client fd with epoll: %s", strerror(errno));
+    //     close(epollFD);
+    //     return -1;
+    // }
+    // struct epoll_event events[MAX_EVENTS];
+    // while (1) {
+    //     int n = epoll_wait(epollFD, events, MAX_EVENTS, -1);
 
-    struct epoll_event events[MAX_EVENTS];
-    while (1) {
-        int n = epoll_wait(epollFD, events, MAX_EVENTS, -1);
-        if (n == -1) {
-            if (errno == EINTR) {
-                // syscall been interrupted, try again
-                continue;
-            }
-            logMessage(log, LOG_ERROR, "epoll_wait failed: %s", strerror(errno));
-            close(epollFD);
-            return -1;
-        }
+    //     if (n == -1) {
+    //         if (errno == EINTR) {
+    //             // syscall been interrupted, try again
+    //             continue;
+    //         }
+    //         logMessage(log, LOG_ERROR, "epoll_wait failed: %s", strerror(errno));
+    //         close(epollFD);
+    //         return -1;
+    //     }
 
-        for (int i = 0; i < n; ++i) {
-            if (events[i].events & EPOLLIN)  {
-                
-                if (events[i].data.fd == clientContext->fd) {
-                    int res = handleClientState(clientContext, log);
-                    if (res == -1) {
-                        close(epollFD);
-                        return -1;
-                    }
+    //     for (int i = 0; i < n; ++i) {
+    //         if (events[i].events & EPOLLIN)  {
+    //             if (events[i].data.fd == clientContext->fd) {
+    //                 int res = handleClientState(clientContext, log);
+    //                 if (res == -1) {
+    //                     close(epollFD);
+    //                     return -1;
+    //                 }
 
-                    // Add server sock to epoll set
-                    if (clientContext->state == STATE_FORWARDING && !clientContext->isServerFDPolling) {
-                        epollEvent.data.fd = clientContext->serverFD;
-                        if (epoll_ctl(epollFD, EPOLL_CTL_ADD, clientContext->serverFD, &epollEvent) == -1) {
-                            logMessage(log, LOG_ERROR, "Failed to register server socket in epoll set: %s", strerror(errno));
-                            close(epollFD);
-                            return -1;
-                        }
-                        clientContext->isServerFDPolling = 1;
-                    }
-                }
+    //                 // Add server sock to epoll set
+    //                 if (clientContext->state == STATE_FORWARDING && !clientContext->isServerFDPolling) {
+    //                     struct epoll_event epollEvent;
+    //                     epollEvent.events = EPOLLIN;
+    //                     epollEvent.data.fd = clientContext->serverFD;
+    //                     if (epoll_ctl(epollFD, EPOLL_CTL_ADD, clientContext->serverFD, &epollEvent) == -1) {
+    //                         logMessage(log, LOG_ERROR, "Failed to register server socket in epoll set: %s", strerror(errno));
+    //                         close(epollFD);
+    //                         return -1;
+    //                     }
+    //                     clientContext->isServerFDPolling = 1;
+    //                 }
+    //             }
 
-                if (events[i].data.fd == clientContext->serverFD) {
-                    if (clientContext->state == STATE_FORWARDING) {
-                        if (forwardTrafficFromServer(clientContext, log) == -1) {
-                            close(epollFD);
-                            return -1;
-                        }
-                    } else {
-                        logMessage(log, LOG_ERROR, "ClientContext has serverFD, but he isn't on state forwarding, wtf?");
-                        close(epollFD);
-                        return -1;
-                    }
-                }
-            }
-        }
-    }
+    //             if (events[i].data.fd == clientContext->serverFD) {
+    //                 if (clientContext->state == STATE_FORWARDING) {
+    //                     if (forwardTrafficFromServer(clientContext, log) == -1) {
+    //                         close(epollFD);
+    //                         return -1;
+    //                     }
+    //                 } else {
+    //                     logMessage(log, LOG_ERROR, "ClientContext has serverFD, but he isn't on state forwarding, wtf?");
+    //                     close(epollFD);
+    //                     return -1;
+    //                 }
+    //             }
+    //         }
+    //     }
+    // }
     
-
-
-    return 0;
-}
+//     return 0;
+// }

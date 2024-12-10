@@ -1,6 +1,7 @@
 #include "../include/client_handler.h"
 #include "../include/client_context.h"
 #include "../include/logger.h"
+#include "../include/server.h"
 #include "../include/socks5.h"
 
 #include <arpa/inet.h>
@@ -23,9 +24,9 @@ void acceptClient(int serverFD, int epollFD, Logger *log) {
 		return;
 	}
 
-	char* ipStrBuf = malloc(sizeof(char) * INET_ADDRSTRLEN);
-	logMessage(log, LOG_INFO, "Accepted new connection: %s", inet_ntop(AF_INET, &clientAddr, ipStrBuf, addrlen));
-	free(ipStrBuf);
+	char ipStrBuf[INET_ADDRSTRLEN];
+	inet_ntop(AF_INET, &clientAddr, ipStrBuf, sizeof(ipStrBuf));
+	logMessage(log, LOG_INFO, "Accepted new connection: %s", ipStrBuf);
 
 	int flags = fcntl(clientFD, F_GETFL, 0);
 	fcntl(clientFD, F_SETFL, flags | O_NONBLOCK);
@@ -37,16 +38,22 @@ void acceptClient(int serverFD, int epollFD, Logger *log) {
 		return;
 	}
 
-	struct epoll_event event = {0};
+	EpollDataWrapper* wrapper = malloc(sizeof(EpollDataWrapper));
+	wrapper->type = CLIENT;
+	wrapper->clientContextPtr = clientContext;
+	
+	struct epoll_event event;
 	event.events = EPOLLIN | EPOLLET;
-	event.data.ptr = clientContext;
+	event.data.ptr = wrapper;
 
 	epoll_ctl(epollFD, EPOLL_CTL_ADD, clientFD, &event);
+	logMessage(log, LOG_DEBUG, "Client evet added to epoll set");
 }
 
-void handleClient(ClientContext* clientContext, int epollFD, Logger *log) {
-	if (processSocks5(clientContext, log) < 0) {
-		freeClientContext(clientContext);
-		epoll_ctl(epollFD, EPOLL_CTL_DEL, clientContext->fd, NULL);
-	}
-}
+// void handleClient(ClientContext* clientContext, int epollFD, Logger *log) {
+// 	if (processSocks5(clientContext, log) < 0) {
+// 		logMessage(log, LOG_INFO, "Close connection with the client");
+// 		freeClientContext(clientContext);
+// 		epoll_ctl(epollFD, EPOLL_CTL_DEL, clientContext->fd, NULL);
+// 	}
+// }
