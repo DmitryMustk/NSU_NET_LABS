@@ -11,6 +11,7 @@ typedef enum {
 typedef struct {
     int fd;
     int serverFD;
+    int isServerFDPolling;
     ClientState state;
 } ClientContext;
 

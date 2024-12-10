@@ -23,7 +23,9 @@
 #define SOCKS5_GENERAL_FAILURE 0x01
 
 #define RESPONSE_LEN 10
-#define BUF_SIZE     512000
+#define BUF_SIZE 16384
+
+#define MAX_EVENTS 256
 
 static int sendSocks5Response(int clientFD, uint8_t status) {
     uint8_t response[RESPONSE_LEN] = {SOCKS5_VERSION, status, 0x00, ADDR_TYPE_IPV4, 0, 0, 0, 0, 0, 0};
@@ -31,12 +33,10 @@ static int sendSocks5Response(int clientFD, uint8_t status) {
 }
 
 static int sendSocks5ConnectResponse(ClientContext* clientContext, Logger* log) {
-    // Формируем ответ в формате SOCKS5
     uint8_t response[10] = {SOCKS5_VERSION, SOCKS5_SUCCESS, 0x00, ADDR_TYPE_IPV4};
     struct sockaddr_in localAddr;
     socklen_t localAddrLen = sizeof(localAddr);
 
-    // Получаем локальный адрес и порт, привязанные к сокету
     if (getsockname(clientContext->serverFD, (struct sockaddr*)&localAddr, &localAddrLen) < 0) {
         logMessage(log, LOG_ERROR, "Failed to retrieve socket address: %s", strerror(errno));
         sendSocks5Response(clientContext->fd, SOCKS5_GENERAL_FAILURE);
@@ -44,11 +44,9 @@ static int sendSocks5ConnectResponse(ClientContext* clientContext, Logger* log) 
         return -1;
     }
 
-    // Копируем адрес и порт в ответ
-    memcpy(&response[4], &localAddr.sin_addr, 4);  // BND.ADDR (IPv4, 4 байта)
-    memcpy(&response[8], &localAddr.sin_port, 2); // BND.PORT (2 байта, в сетевом порядке)
+    memcpy(&response[4], &localAddr.sin_addr, 4);  // BND.ADDR (IPv4, 4 bytes)
+    memcpy(&response[8], &localAddr.sin_port, 2); // BND.PORT (2 bytes, network order)
 
-    // Отправляем ответ клиенту
     if (send(clientContext->fd, response, sizeof(response), 0) < 0) {
         logMessage(log, LOG_ERROR, "Failed to send SOCKS5 response: %s", strerror(errno));
         close(clientContext->serverFD);
@@ -57,34 +55,6 @@ static int sendSocks5ConnectResponse(ClientContext* clientContext, Logger* log) 
     
     return 0;
 }
-
-static int forwardTraffic(ClientContext *clientContext, Logger* log) {
-    char buffer[BUF_SIZE];
-    ssize_t bytes;
-
-    // Forward data from client to server
-    if ((bytes = recv(clientContext->fd, buffer, sizeof(buffer), 0)) > 0) {
-        logMessage(log, LOG_DEBUG, "Client request: %s", buffer);
-        if (send(clientContext->serverFD, buffer, bytes, 0) <= 0) {
-            return -1;
-        }
-    } else if (bytes == 0 || (bytes < 0 && errno != EAGAIN)) {
-        return -1; // Error or client disconnected
-    }
-
-    // Forward data from server to client
-    if ((bytes = recv(clientContext->serverFD, buffer, sizeof(buffer), 0)) > 0) {
-        logMessage(log, LOG_DEBUG, "Server response: %s", buffer);
-        if (send(clientContext->fd, buffer, bytes, 0) <= 0) {
-            return -1;
-        }
-    } else if (bytes == 0 || (bytes < 0 && errno != EAGAIN)) {
-        return -1; // Error or server disconnected
-    }
-
-    return 0;
-}
-
 
 static int processHelloRequest(ClientContext* clientContext, Logger* log) {
     uint8_t buffer[BUF_SIZE];
@@ -130,8 +100,6 @@ static int processHelloRequest(ClientContext* clientContext, Logger* log) {
     return 0;
 }
 
-
-
 static int processConnectionRequest(ClientContext* clientContext, Logger* log) {
     uint8_t buffer[BUF_SIZE];
     ssize_t bytesReceived = recv(clientContext->fd, buffer, sizeof(buffer), 0);
@@ -149,6 +117,7 @@ static int processConnectionRequest(ClientContext* clientContext, Logger* log) {
         inet_ntop(AF_INET, &buffer[4], targetAddr, sizeof(targetAddr));
         targetPort = ntohs(*(uint16_t *)&buffer[8]);
     } else if (addrType == ADDR_TYPE_DOMAIN) {
+        // TODO: add domain addrType support
         uint8_t domainLen = buffer[4];
         memcpy(targetAddr, &buffer[5], domainLen);
         targetAddr[domainLen] = '\0';
@@ -195,23 +164,137 @@ static int processConnectionRequest(ClientContext* clientContext, Logger* log) {
     return 0;
 }
 
-int processSocks5(ClientContext* clientContext, Logger *log) {
-    if (clientContext->state == STATE_NONE) {
-        return processHelloRequest(clientContext, log);
-    }
-    else if (clientContext->state == STATE_HELLO) {
-        return processConnectionRequest(clientContext, log);
-    }
-    else if (clientContext->state == STATE_FORWARDING) {
-        forwardTraffic(clientContext, log);
-    }
-
-    uint8_t buffer[BUF_SIZE];
-    ssize_t bytesReceived = recv(clientContext->fd, buffer, sizeof(buffer), 0);
-	if (bytesReceived <= 0) {
+static int forwardTrafficFromClient(ClientContext* clientContext, Logger* log) {
+    char buf[BUF_SIZE];
+    ssize_t bytesReceived = recv(clientContext->fd, buf, sizeof(buf), 0);
+    if (bytesReceived == 0) {
+        logMessage(log, LOG_INFO, "Client disconnected");
         return -1;
     }
-	logHexMessage(log, LOG_DEBUG, buffer, bytesReceived);
+
+    logMessage(log, LOG_DEBUG, "Received from client: %zd bytes", bytesReceived);
+    ssize_t totalBytesSent = 0;
+    while (totalBytesSent < bytesReceived) {
+        ssize_t bytesSent = send(clientContext->serverFD, buf + totalBytesSent, bytesReceived - totalBytesSent, 0);
+        if (bytesSent <= 0) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                continue;
+            }
+            logMessage(log, LOG_ERROR, "Failed to send data to server: %s", strerror(errno));
+            return -1;
+        }
+        totalBytesSent += bytesSent;
+    }
+    return 0;
+}
+
+static int forwardTrafficFromServer(ClientContext* clientContext, Logger* log) {
+    char buf[BUF_SIZE];
+    ssize_t bytesReceived = recv(clientContext->serverFD, buf, sizeof(buf), 0);
+    if (bytesReceived == 0) {
+        logMessage(log, LOG_INFO, "Server disconnected");
+        return -1;
+    }
+    logMessage(log, LOG_DEBUG, "Received from server: %zd bytes", bytesReceived);
+
+    ssize_t totalBytesSent = 0;
+    while (totalBytesSent < bytesReceived) {
+        ssize_t bytesSent = send(clientContext->fd, buf + totalBytesSent, bytesReceived - totalBytesSent, 0);
+        if (bytesSent <= 0) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                continue;
+            }
+            logMessage(log, LOG_ERROR, "Failed to send data to client: %s", strerror(errno));
+            return -1;
+        }
+        totalBytesSent += bytesSent;
+    }
+
+    return 0;
+}
+
+static int handleClientState(ClientContext* clientContext, Logger* log) {
+    if (clientContext->state == STATE_NONE) {
+        return processHelloRequest(clientContext, log);
+    } else if (clientContext->state == STATE_HELLO) {
+        return processConnectionRequest(clientContext, log);
+    } else if (clientContext->state == STATE_FORWARDING) {
+        return forwardTrafficFromClient(clientContext, log);
+    }
+
+    logMessage(log, LOG_ERROR, "Unknown state: %d", clientContext->state);
+    return -1;
+}
+
+int processSocks5(ClientContext* clientContext, Logger *log) {
+    int epollFD = epoll_create1(0);
+    if (epollFD == -1) {
+        logMessage(log, LOG_ERROR, "Failed to create epoll instance: %s", strerror(errno));
+        return -1;
+    }
+
+    // Add client socket as a epoll event to set
+    struct epoll_event epollEvent;
+    epollEvent.events = EPOLLIN | EPOLLET; // read with edge-trigerred handling
+    epollEvent.data.fd = clientContext->fd;
+    if (epoll_ctl(epollFD, EPOLL_CTL_ADD, clientContext->fd, &epollEvent) == -1) {
+        logMessage(log, LOG_ERROR, "Failed to register client fd with epoll: %s", strerror(errno));
+        close(epollFD);
+        return -1;
+    }
+
+    struct epoll_event events[MAX_EVENTS];
+    while (1) {
+        int n = epoll_wait(epollFD, events, MAX_EVENTS, -1);
+        if (n == -1) {
+            if (errno == EINTR) {
+                // syscall been interrupted, try again
+                continue;
+            }
+            logMessage(log, LOG_ERROR, "epoll_wait failed: %s", strerror(errno));
+            close(epollFD);
+            return -1;
+        }
+
+        for (int i = 0; i < n; ++i) {
+            if (events[i].events & EPOLLIN)  {
+                
+                if (events[i].data.fd == clientContext->fd) {
+                    int res = handleClientState(clientContext, log);
+                    if (res == -1) {
+                        close(epollFD);
+                        return -1;
+                    }
+
+                    // Add server sock to epoll set
+                    if (clientContext->state == STATE_FORWARDING && !clientContext->isServerFDPolling) {
+                        epollEvent.data.fd = clientContext->serverFD;
+                        if (epoll_ctl(epollFD, EPOLL_CTL_ADD, clientContext->serverFD, &epollEvent) == -1) {
+                            logMessage(log, LOG_ERROR, "Failed to register server socket in epoll set: %s", strerror(errno));
+                            close(epollFD);
+                            return -1;
+                        }
+                        clientContext->isServerFDPolling = 1;
+                    }
+                }
+
+                if (events[i].data.fd == clientContext->serverFD) {
+                    if (clientContext->state == STATE_FORWARDING) {
+                        if (forwardTrafficFromServer(clientContext, log) == -1) {
+                            close(epollFD);
+                            return -1;
+                        }
+                    } else {
+                        logMessage(log, LOG_ERROR, "ClientContext has serverFD, but he isn't on state forwarding, wtf?");
+                        close(epollFD);
+                        return -1;
+                    }
+                }
+            }
+        }
+    }
+    
+
 
     return 0;
 }

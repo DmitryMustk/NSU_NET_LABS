@@ -11,6 +11,7 @@ ClientContext* createClientContext(int fd) {
     }
     clientContext->fd = fd;
     clientContext->serverFD = 0;
+    clientContext->isServerFDPolling = 0;
     clientContext->state = STATE_NONE;
     return clientContext;
 }
