@@ -1,11 +1,14 @@
 #include "../include/logger.h"
 #include "../include/server.h"
 
+#include "../include/dns_resolver.h"
+
 #include <netinet/in.h>
 #include <stdlib.h>
 
 #define MAX_PORT_VALUE 65535
 
+// TODO: unify epoll set add
 // TODO: DNS
 
 int main(int argc, char** argv) {
@@ -24,10 +27,17 @@ int main(int argc, char** argv) {
 	logMessage(log, LOG_INFO, "socksProxy started on %s port...", argv[1]); 
 	logMessage(log, LOG_INFO, "No Auth method required");
 
-	if (startServer(port, log) < 0) {
-		logMessage(log, LOG_ERROR, "Failed to start server");
-		return 1-;
-	}
+	// if (startServer(port, log) < 0) {
+	// 	logMessage(log, LOG_ERROR, "Failed to start server");
+	// 	return -1;
+	// }
+
+	const char* hostname = "example.com";
+	char ip[INET_ADDRSTRLEN];
+
+	DnsResolver* dnsResolver = createDnsResolver(log);
+	sendDnsRequest(dnsResolver, hostname, log);
+	getDnsResponse(dnsResolver, ip, log); 
 
 	closeLogger(log);
 	return 0;
