@@ -1,4 +1,5 @@
 #include "../include/client_handler.h"
+#include "../include/epoll_wrapper.h"
 #include "../include/client_context.h"
 #include "../include/logger.h"
 #include "../include/socks5.h"
@@ -95,10 +96,12 @@ int acceptClient(int serverFD, int epollFD, Logger *log) {
 		return -1;
 	}
 
-	struct epoll_event event;
-	event.events = EPOLLIN | EPOLLET;
-	event.data.ptr = epollDataWrapper;
-	epoll_ctl(epollFD, EPOLL_CTL_ADD, clientFD, &event);
+	// struct epoll_event event;
+	// event.events = EPOLLIN | EPOLLET;
+	// event.data.ptr = epollDataWrapper;
+	// epoll_ctl(epollFD, EPOLL_CTL_ADD, clientFD, &event);
+
+    addToEpollSetByPtr(epollFD, clientFD, epollDataWrapper, EPOLLIN | EPOLLET);
 
 	return 0;
 }

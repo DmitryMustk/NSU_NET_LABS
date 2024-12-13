@@ -2,6 +2,7 @@
 #include "../include/logger.h"
 #include "../include/client_context.h"
 #include "../include/server.h"
+#include "../include/epoll_wrapper.h"
 
 #include <arpa/inet.h>
 #include <assert.h>
@@ -196,16 +197,7 @@ int handleClientState(ClientContext* clientContext, int epollFD, Logger* log) {
         EpollDataWrapper* wrap = malloc(sizeof(EpollDataWrapper));
         wrap->type = TARGET_SERVER;
         wrap->clientContextPtr = clientContext;
-
-        struct epoll_event targetServerEvent;
-        targetServerEvent.events = EPOLLIN;
-        targetServerEvent.data.ptr = wrap;
-
-        if (epoll_ctl(epollFD, EPOLL_CTL_ADD, clientContext->serverFD, &targetServerEvent) == -1) {
-            logMessage(log, LOG_ERROR, "Failed to register target server fd with epoll: %s", strerror(errno));
-            close(epollFD);
-            return -1;
-        }
+        addToEpollSetByPtr(epollFD, clientContext->serverFD, wrap, EPOLLIN);
         return 0;
     } 
     logMessage(log, LOG_ERROR, "Unknown state: %d", clientContext->state);
