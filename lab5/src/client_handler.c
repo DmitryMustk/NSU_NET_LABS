@@ -16,7 +16,34 @@
 #include <stdio.h>
 #include <string.h>
 
-#define BUF_SIZE 16384
+#define BUF_SIZE 32000
+
+int connectToTargetServer(ClientContext* clientContext, Logger* log) {
+    int targetServerFD = socket(AF_INET, SOCK_STREAM, 0);
+    if (targetServerFD < 0) {
+        logMessage(log, LOG_ERROR, "Failed to create target server socket: %s", strerror(errno));
+        return -1;
+    }
+
+    struct sockaddr_in targetServerAddr;
+    memset(&targetServerAddr, 0, sizeof(targetServerAddr));
+    targetServerAddr.sin_family = AF_INET;
+    targetServerAddr.sin_port = htons(clientContext->serverPort);
+    if (inet_pton(AF_INET, clientContext->serverIP, &targetServerAddr.sin_addr) <= 0) {
+        logMessage(log, LOG_ERROR, "Invalid target address: %s", strerror(errno));
+        close(targetServerFD);
+        return -1;
+    }
+
+    if (connect(targetServerFD, (struct sockaddr*)&targetServerAddr, sizeof(targetServerAddr)) < 0) {
+        logMessage(log, LOG_ERROR, "Failed to connect to target: %s", strerror(errno));
+        close(targetServerFD);
+        return -1;
+    }
+
+    logMessage(log, LOG_INFO, "Connected to target server %s:%d", clientContext->serverIP, clientContext->serverPort);
+    return targetServerFD;
+}
 
 int forwardTrafficFromClient(ClientContext* clientContext, Logger* log) {
     char buf[BUF_SIZE];
@@ -96,12 +123,6 @@ int acceptClient(int serverFD, int epollFD, Logger *log) {
 		return -1;
 	}
 
-	// struct epoll_event event;
-	// event.events = EPOLLIN | EPOLLET;
-	// event.data.ptr = epollDataWrapper;
-	// epoll_ctl(epollFD, EPOLL_CTL_ADD, clientFD, &event);
-
     addToEpollSetByPtr(epollFD, clientFD, epollDataWrapper, EPOLLIN | EPOLLET);
-
 	return 0;
 }

@@ -29,6 +29,11 @@ int addToEpollSetByPtr(int epollFD, int fd, void* ptr, int events) {
     return epoll_ctl(epollFD, EPOLL_CTL_ADD, fd, &event);
 }
 
+int addServerFDToEpollSet(int epollFD, ClientContext* clientContext) {
+    EpollDataWrapper* wrap = createEpollDataWrapper(clientContext, TARGET_SERVER);
+    return addToEpollSetByPtr(epollFD, clientContext->serverFD, wrap, EPOLLIN);
+}
+
 int deleteFromEpollSet(int epollFD, int fd, struct epoll_event* event) {
     return epoll_ctl(epollFD, EPOLL_CTL_DEL, fd, event);
 }

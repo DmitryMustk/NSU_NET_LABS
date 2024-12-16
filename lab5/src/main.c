@@ -8,8 +8,6 @@
 
 #define MAX_PORT_VALUE 65535
 
-// TODO: DNS
-
 int main(int argc, char** argv) {
 	Logger* log = createLogger("log.txt", LOG_DEBUG, 1);
 	if (argc != 2) {
@@ -30,13 +28,6 @@ int main(int argc, char** argv) {
 		logMessage(log, LOG_ERROR, "Failed to start server");
 		return -1;
 	}
-
-	const char* hostname = "example.com";
-	char ip[INET_ADDRSTRLEN];
-
-	DnsResolver* dnsResolver = createDnsResolver(log);
-	sendDnsRequest(dnsResolver, hostname, log);
-	getDnsResponse(dnsResolver, ip, log); 
 
 	closeLogger(log);
 	return 0;

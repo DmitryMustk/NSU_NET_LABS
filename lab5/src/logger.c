@@ -32,7 +32,7 @@ Logger* createLogger(const char* filename, LogLevel level, int toConsole) {
     }
     logger->level = level;
     logger->toConsole = toConsole;
-    pthread_mutex_init(&logger->mutex, NULL);
+    // pthread_mutex_init(&logger->mutex, NULL);
     return logger;
 }
 
@@ -41,7 +41,7 @@ void logMessage(Logger* logger, LogLevel level, const char* format, ...) {
         return;
     }
 
-    pthread_mutex_lock(&logger->mutex);
+    // pthread_mutex_lock(&logger->mutex);
 
     time_t now = time(NULL);
     struct tm* t = localtime(&now);
@@ -74,7 +74,7 @@ void logMessage(Logger* logger, LogLevel level, const char* format, ...) {
         va_end(args);
     }
 
-    pthread_mutex_unlock(&logger->mutex);
+    // pthread_mutex_unlock(&logger->mutex);
 }
 
 void logHexMessage(Logger *log, LogLevel level, const uint8_t *data, size_t length) {
@@ -93,7 +93,7 @@ void logHexMessage(Logger *log, LogLevel level, const uint8_t *data, size_t leng
 void closeLogger(Logger* logger) {
     if (logger) {
         fclose(logger->file);
-        pthread_mutex_destroy(&logger->mutex);
+        // pthread_mutex_destroy(&logger->mutex);
         free(logger);
     }
 }

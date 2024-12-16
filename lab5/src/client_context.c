@@ -5,12 +5,16 @@
 #include <unistd.h>
 #include <string.h>
 
+#define MAX_ID 1024
+
+int globalId = 0;
+
 ClientContext* createClientContext(int fd) {
     ClientContext* clientContext = malloc(sizeof(ClientContext));
     if (clientContext == NULL) {
         return NULL;
     }
-
+    clientContext->id = globalId++ % MAX_ID;
     clientContext->fd = fd;
     clientContext->serverFD = 0;
     clientContext->state = STATE_NONE;

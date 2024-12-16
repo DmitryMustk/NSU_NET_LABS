@@ -1,6 +1,8 @@
 #include "../include/socks5.h"
 #include "../include/logger.h"
+#include "../include/client_handler.h"
 #include "../include/client_context.h"
+#include "../include/dns_resolver.h"
 #include "../include/server.h"
 #include "../include/epoll_wrapper.h"
 
@@ -23,7 +25,9 @@
 #define ADDR_TYPE_DOMAIN       0x03
 #define SOCKS5_SUCCESS         0x00
 #define SOCKS5_GENERAL_FAILURE 0x01
+#define SOCKS5_CONNECTION_NOT_ALLOWED_BY_RULESET 0x02
 
+#define DOMAIN_MAX_LEN 256
 #define RESPONSE_LEN 10
 #define BUF_SIZE 16384
 
@@ -34,14 +38,13 @@ static int sendSocks5Response(int clientFD, uint8_t status) {
     return send(clientFD, response, RESPONSE_LEN, 0); 
 }
 
-static int sendSocks5ConnectResponse(ClientContext* clientContext, Logger* log) {
-    uint8_t response[10] = {SOCKS5_VERSION, SOCKS5_SUCCESS, 0x00, ADDR_TYPE_IPV4};
+static int sendSocks5ConnectResponse(ClientContext* clientContext, uint8_t reply, Logger* log) {
+    uint8_t response[10] = {SOCKS5_VERSION, reply, 0x00, ADDR_TYPE_IPV4};
     struct sockaddr_in localAddr;
     socklen_t localAddrLen = sizeof(localAddr);
 
     if (getsockname(clientContext->serverFD, (struct sockaddr*)&localAddr, &localAddrLen) < 0) {
         logMessage(log, LOG_ERROR, "Failed to retrieve socket address: %s", strerror(errno));
-        sendSocks5Response(clientContext->fd, SOCKS5_GENERAL_FAILURE);
         close(clientContext->serverFD);
         return -1;
     }
@@ -59,6 +62,7 @@ static int sendSocks5ConnectResponse(ClientContext* clientContext, Logger* log) 
 }
 
 static int processHelloRequest(ClientContext* clientContext, Logger* log) {
+    logMessage(log, LOG_DEBUG, "Processing hello request");
     uint8_t buffer[BUF_SIZE];
     ssize_t bytesReceived = recv(clientContext->fd, buffer, sizeof(buffer), 0);
 	if (bytesReceived <= 0) {
@@ -72,7 +76,6 @@ static int processHelloRequest(ClientContext* clientContext, Logger* log) {
 	logHexMessage(log, LOG_DEBUG, buffer, bytesReceived);
         
     if (buffer[0] != SOCKS5_VERSION) {
-        sendSocks5Response(clientContext->fd, SOCKS5_GENERAL_FAILURE);
         return -1;
     }
 
@@ -99,62 +102,38 @@ static int processHelloRequest(ClientContext* clientContext, Logger* log) {
 static int receiveAndValidateRequest(ClientContext* clientContext, Logger* log, uint8_t* buffer, size_t bufferSize) {
     ssize_t bytesReceived = recv(clientContext->fd, buffer, bufferSize, 0);
     if (bytesReceived <= 0 || buffer[1] != CMD_CONNECT) {
-        return sendSocks5Response(clientContext->fd, SOCKS5_GENERAL_FAILURE);
+        return -1;
     }
     logHexMessage(log, LOG_DEBUG, buffer, bytesReceived);
     return 0;
 }
 
-static int extractTargetAddressAndPort(const uint8_t* buffer, char* targetAddr, size_t addrSize, uint16_t* targetPort, Logger* log) {
+static int extractTargetAddressAndPort(ClientContext* clientContext, const uint8_t* buffer, char* domain, Logger* log) {
     uint8_t addrType = buffer[3];
 
     if (addrType == ADDR_TYPE_IPV4) {
-        inet_ntop(AF_INET, &buffer[4], targetAddr, addrSize);
-        *targetPort = ntohs(*(uint16_t*)&buffer[8]);
+        clientContext->addrType = IPV4;
+        inet_ntop(AF_INET, &buffer[4], clientContext->serverIP, INET_ADDRSTRLEN);
+        clientContext->serverPort = ntohs(*(uint16_t*)&buffer[8]);
+        clientContext->isDomainResolved = 1;
     } else if (addrType == ADDR_TYPE_DOMAIN) {
-        logMessage(log, LOG_ERROR, "Domain addr type is not supported yet");
-        // uint8_t domainLen = buffer[4];
-        // memcpy(targetAddr, &buffer[5], domainLen);
-        // targetAddr[domainLen] = '\0';
-        // *targetPort = ntohs(*(uint16_t*)&buffer[5 + domainLen]);
+        clientContext->addrType = IPV6;
+        uint8_t domainLen = buffer[4];
+        memcpy(domain, &buffer[5], domainLen);
+        domain[domainLen] = '\0';
+        clientContext->serverPort = ntohs(*(uint16_t*)&buffer[5 + domainLen]);
+        clientContext->isDomainResolved = 0;
     } else {
+        clientContext->addrType = IPV6;
         logMessage(log, LOG_ERROR, "IPv6 is not supported");
+        sendSocks5ConnectResponse(clientContext, SOCKS5_CONNECTION_NOT_ALLOWED_BY_RULESET, log);
         return -1;
     }
 
-    logMessage(log, LOG_DEBUG, "Target addr: %s:%d", targetAddr, *targetPort);
     return 0;
 }
 
-static int createAndConnectToTarget(char* targetAddr, uint16_t targetPort, Logger* log) {
-    int targetServerFD = socket(AF_INET, SOCK_STREAM, 0);
-    if (targetServerFD < 0) {
-        logMessage(log, LOG_ERROR, "Failed to create target server socket: %s", strerror(errno));
-        return -1;
-    }
-
-    struct sockaddr_in targetServerAddr;
-    memset(&targetServerAddr, 0, sizeof(targetServerAddr));
-    targetServerAddr.sin_family = AF_INET;
-    targetServerAddr.sin_port = htons(targetPort);
-    if (inet_pton(AF_INET, targetAddr, &targetServerAddr.sin_addr) <= 0) {
-        logMessage(log, LOG_ERROR, "Invalid target address: %s", strerror(errno));
-        close(targetServerFD);
-        return -1;
-    }
-
-    if (connect(targetServerFD, (struct sockaddr*)&targetServerAddr, sizeof(targetServerAddr)) < 0) {
-        logMessage(log, LOG_ERROR, "Failed to connect to target: %s", strerror(errno));
-        close(targetServerFD);
-        return -1;
-    }
-
-    logMessage(log, LOG_INFO, "Connected to target server %s:%d", targetAddr, targetPort);
-    return targetServerFD;
-}
-
 static int handleConnectionFailure(int clientFD, int serverFD, Logger* log) {
-    sendSocks5Response(clientFD, SOCKS5_GENERAL_FAILURE);
     if (serverFD >= 0) {
         logMessage(log, LOG_ERROR, "Connection failured");
         close(serverFD);
@@ -162,19 +141,29 @@ static int handleConnectionFailure(int clientFD, int serverFD, Logger* log) {
     return -1;
 }
 
-static int processConnectionRequest(ClientContext* clientContext, Logger* log) {
+static int processConnectionRequest(ClientContext* clientContext, DnsResolver* dnsResolver, Logger* log) {
+    logMessage(log, LOG_DEBUG, "Processing connection request");
     uint8_t buffer[BUF_SIZE];
     if (receiveAndValidateRequest(clientContext, log, buffer, sizeof(buffer)) < 0) {
         return -1;
     }
+    logMessage(log, LOG_DEBUG, "Request received");
 
-    char targetAddr[256] = {0};
-    uint16_t targetPort;
-    if (extractTargetAddressAndPort(buffer, targetAddr, sizeof(targetAddr), &targetPort, log) < 0) {
-        return sendSocks5Response(clientContext->fd, SOCKS5_GENERAL_FAILURE);
+    char domain[DOMAIN_MAX_LEN] = {0};
+    logMessage(log, LOG_DEBUG, "Start extracting adress");
+    if (extractTargetAddressAndPort(clientContext, buffer, domain, log) < 0) {
+        return -1;
     }
+    logMessage(log, LOG_DEBUG, "Send dns request");
 
-    int targetServerFD = createAndConnectToTarget(targetAddr, targetPort, log);
+    if (!clientContext->isDomainResolved) {
+        sendDnsRequest(dnsResolver, clientContext, domain, log);
+        return 0;
+    }
+    logMessage(log, LOG_DEBUG, "Connect to target server");
+
+    int targetServerFD = connectToTargetServer(clientContext, log);
+    logMessage(log, LOG_DEBUG, "Connected to target server");
     if (targetServerFD < 0) {
         return handleConnectionFailure(clientContext->fd, targetServerFD, log);
     }
@@ -182,22 +171,21 @@ static int processConnectionRequest(ClientContext* clientContext, Logger* log) {
     clientContext->serverFD = targetServerFD;
     clientContext->state = STATE_FORWARDING;
 
-    sendSocks5ConnectResponse(clientContext, log);
+    logMessage(log, LOG_DEBUG, "Send connect response");
+    sendSocks5ConnectResponse(clientContext, SOCKS5_SUCCESS, log);
+    logMessage(log, LOG_DEBUG, "Connection request been processed");
     return 0;
 }
 
-int handleClientState(ClientContext* clientContext, int epollFD, Logger* log) {
+int handleClientState(ClientContext* clientContext, int epollFD, DnsResolver* dnsResolver, Logger* log) {
     if (clientContext->state == STATE_NONE) {
         return processHelloRequest(clientContext, log);
     } else if (clientContext->state == STATE_HELLO) {
-        if (processConnectionRequest(clientContext, log) == -1) {
+        if (processConnectionRequest(clientContext, dnsResolver, log) == -1) {
             return -1;
         }
+        addServerFDToEpollSet(epollFD, clientContext);
         
-        EpollDataWrapper* wrap = malloc(sizeof(EpollDataWrapper));
-        wrap->type = TARGET_SERVER;
-        wrap->clientContextPtr = clientContext;
-        addToEpollSetByPtr(epollFD, clientContext->serverFD, wrap, EPOLLIN);
         return 0;
     } 
     logMessage(log, LOG_ERROR, "Unknown state: %d", clientContext->state);

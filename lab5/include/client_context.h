@@ -2,6 +2,7 @@
 #define CLIENT_CONTEXT_H
 
 #include <stdint.h>
+#include <netinet/in.h>
 
 typedef enum {
     STATE_NONE,
@@ -10,9 +11,20 @@ typedef enum {
     STATE_FORWARDING,
 } ClientState;
 
+typedef enum {
+    IPV4,
+    IPV6,
+    DOMAIN,
+} AddrType;
+
 typedef struct {
-    int fd;
-    int serverFD;
+    int         id;
+    int         fd;
+    int         serverFD;
+    char        serverIP[INET_ADDRSTRLEN];
+    in_port_t   serverPort;
+    int         isDomainResolved;
+    AddrType    addrType;
     ClientState state;
 } ClientContext;
 
@@ -22,7 +34,7 @@ typedef enum {
 } SocketType;
 
 typedef struct {
-    SocketType type;
+    SocketType     type;
     ClientContext* clientContextPtr;
 } EpollDataWrapper;
 

@@ -4,6 +4,8 @@
 #include "logger.h"
 #include "client_context.h"
 
+
+int connectToTargetServer(ClientContext* clientContext, Logger* log);
 int acceptClient(int serverFD, int epollFD, Logger* log);
 int forwardTrafficFromClient(ClientContext* clientContext, Logger* log);
 int forwardTrafficFromServer(ClientContext* clientContext, Logger* log);

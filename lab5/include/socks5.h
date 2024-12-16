@@ -3,7 +3,9 @@
 
 #include "logger.h"
 #include "client_context.h"
+#include "dns_resolver.h"
 
-int handleClientState(ClientContext* clientContext, int epollFD, Logger* log);
+// int sendSocks5ConnectResponse(ClientContext* clientContext, Logger* log);
+int handleClientState(ClientContext* clientContext, int epollFD, DnsResolver* dnsResolver, Logger* log);
 
 #endif //SOCKS5_H

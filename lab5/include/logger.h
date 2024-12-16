@@ -16,7 +16,7 @@ typedef struct {
     FILE* file;
     LogLevel level;
     int toConsole;
-    pthread_mutex_t mutex;
+    // pthread_mutex_t mutex;
 } Logger;
 
 Logger* createLogger(const char* filename, LogLevel level, int toConsole);

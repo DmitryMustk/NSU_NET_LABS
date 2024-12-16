@@ -24,16 +24,18 @@ static int addUdpSocket(DnsResolver* dnsResolver, Logger* log) {
 }
 
 static int addDnsServerAddr(DnsResolver* dnsResolver, Logger* log) {
-    struct sockaddr_in* dnsServerAddr = malloc(sizeof(struct sockaddr_in));
-    if (dnsServerAddr == NULL) {
+    if (dnsResolver->dnsServerAddr != NULL) {
+        free(dnsResolver->dnsServerAddr);
+    }
+    dnsResolver->dnsServerAddr = malloc(sizeof(struct sockaddr_in));
+    if (dnsResolver->dnsServerAddr == NULL) {
         logMessage(log, LOG_ERROR, "Can't allocate memory for dns server address for resolver instance");
         return -1;
     }
 
-    dnsServerAddr->sin_family = AF_INET;
-    dnsServerAddr->sin_port = htons(DNS_SERVER_PORT);
-    inet_pton(AF_INET, DNS_SERVER_IP, &dnsServerAddr->sin_addr);
-    dnsResolver->dnsServerAddr = dnsServerAddr;
+    dnsResolver->dnsServerAddr->sin_family = AF_INET;
+    dnsResolver->dnsServerAddr->sin_port = htons(DNS_SERVER_PORT);
+    inet_pton(AF_INET, DNS_SERVER_IP, &(dnsResolver->dnsServerAddr->sin_addr));
     return 0;
 }
 
@@ -44,6 +46,12 @@ DnsResolver* createDnsResolver(Logger* log) {
         return NULL;
     }
 
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        dnsResolver->clientsArr[i] = NULL;
+    }
+    dnsResolver->dnsServerAddr = NULL;
+    dnsResolver->udpSocket = -1;
+
     if (addUdpSocket(dnsResolver, log) == -1) {
         free(dnsResolver);
         return NULL;
@@ -52,6 +60,7 @@ DnsResolver* createDnsResolver(Logger* log) {
     if (addDnsServerAddr(dnsResolver, log) == -1) {
         close(dnsResolver->udpSocket);
         free(dnsResolver);
+        return NULL;
     }
 
     return dnsResolver;
@@ -63,11 +72,10 @@ void freeDnsResolver(DnsResolver* dnsResolver) {
     free(dnsResolver);
 }
 
-static int buildDnsQuery(uint8_t* buf, const char* hostname, Logger* log) {
+static int buildDnsQuery(uint16_t id, uint8_t* buf, const char* hostname, Logger* log) {
     memset(buf, 0, BUF_SIZE);
-
-    buf[0] = 0x12;
-    buf[1] = 0x34;
+    buf[0] = (id >> 8) & 0xFF; 
+    buf[1] = id & 0xFF;   
     buf[2] = 0x01;
     buf[5] = 0x01;
 
@@ -93,8 +101,11 @@ static int buildDnsQuery(uint8_t* buf, const char* hostname, Logger* log) {
     return hostnameCursor - buf + 4; // query len  
 }
 
-static int parseDnsResponse(const char* buffer, char* ip, Logger* log) {
+// Returns clientContext id
+static uint16_t parseDnsResponse(const char* buffer, char* ip, Logger* log) {
     // logHexMessage(log, LOG_DEBUG, buffer, BUF_SIZE);
+    uint16_t id = ntohs(*(unsigned short*)buffer);
+    logMessage(log, LOG_DEBUG, "Get dns response for %d ip");
     int questionsCount = ntohs(*(unsigned short*)(buffer + 4));
     int answersCount   = ntohs(*(unsigned short*)(buffer + 6));
 
@@ -131,32 +142,45 @@ static int parseDnsResponse(const char* buffer, char* ip, Logger* log) {
         snprintf(ip, INET_ADDRSTRLEN, "%u.%u.%u.%u",
                  (unsigned char)cursor[0], (unsigned char)cursor[1],
                  (unsigned char)cursor[2], (unsigned char)cursor[3]);
-        return 0;
+        return id;
     }
 
     logMessage(log, LOG_ERROR, "Non-A record in response");
     return -1;
 }
 
-int getDnsResponse(DnsResolver* dnsResolver, char* ip, Logger* log) {
+ClientContext* getDnsResponse(DnsResolver* dnsResolver, char* ip, Logger* log) {
     char buffer[BUF_SIZE];
-    socklen_t len = sizeof(dnsResolver->dnsServerAddr);
-    int recvLen = recvfrom(dnsResolver->udpSocket, buffer, BUF_SIZE, 0, (struct sockaddr*)&dnsResolver->dnsServerAddr, &len);
+    socklen_t len = sizeof(*(dnsResolver->dnsServerAddr));
+    int recvLen = recvfrom(dnsResolver->udpSocket, buffer, BUF_SIZE, 0, (struct sockaddr*)dnsResolver->dnsServerAddr, &len);
     logMessage(log, LOG_DEBUG, "Get from dns server response of %d bytes", recvLen);
-
-    if (recvLen > 0 && parseDnsResponse(buffer, ip, log) == 0) {
-        logMessage(log, LOG_INFO, "Domain successfuly resolved: %s", ip);
-        return 0;
+    
+    if (recvLen <= 0) {
+        logMessage(log, LOG_ERROR, "Failed to get dns response");
+        return NULL;
+    }
+    uint16_t id = parseDnsResponse(buffer, ip, log);
+    if (id >= 0) {
+        logMessage(log, LOG_INFO, "Domain successfuly resolved: %s for id: %d", ip, id);        
+        if (dnsResolver->clientsArr[id] == NULL) {
+            logMessage(log, LOG_ERROR, "Don't have client session for id: %d", id);
+        }
+        return dnsResolver->clientsArr[id];
     }
 
-    return -1;
+    logMessage(log, LOG_ERROR, "Failed to get dns response");
+    return NULL;
 }
 
-int sendDnsRequest(DnsResolver* dnsResolver, const char* hostname, Logger* log) {
+int sendDnsRequest(DnsResolver* dnsResolver, ClientContext* clientContext, const char* hostname, Logger* log) {
+    dnsResolver->clientsArr[clientContext->id] = clientContext;
+    char dnsAddrStr[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &(dnsResolver->dnsServerAddr->sin_addr), dnsAddrStr, INET_ADDRSTRLEN);
     uint8_t buffer[BUF_SIZE];
 
-    int queryLen = buildDnsQuery(buffer, hostname, log);
-    if (sendto(dnsResolver->udpSocket, buffer, queryLen, 0, (struct sockaddr*)dnsResolver->dnsServerAddr, sizeof(*(dnsResolver->dnsServerAddr))) < 0) {
+    int queryLen = buildDnsQuery(clientContext->id, buffer, hostname, log);
+
+    if (sendto(dnsResolver->udpSocket, buffer, queryLen, 0, (struct sockaddr*)dnsResolver->dnsServerAddr, sizeof(struct sockaddr_in)) < 0) {
         logMessage(log, LOG_ERROR, "Can't send dns query to dns server: %s", strerror(errno));
         return -1;
     }
