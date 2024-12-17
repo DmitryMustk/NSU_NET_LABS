@@ -27,13 +27,13 @@
 #define SOCKS5_GENERAL_FAILURE 0x01
 #define SOCKS5_CONNECTION_NOT_ALLOWED_BY_RULESET 0x02
 
-#define DOMAIN_MAX_LEN 256
+#define DOMAIN_MAX_LEN 256 + 1
 #define RESPONSE_LEN 10
 #define BUF_SIZE 16384
 
 #define MAX_EVENTS 64
 
-static int sendSocks5Response(int clientFD, uint8_t status) {
+static int sendSoextractTargetAddressAndPortcks5Response(int clientFD, uint8_t status) {
     uint8_t response[RESPONSE_LEN] = {SOCKS5_VERSION, status, 0x00, ADDR_TYPE_IPV4, 0, 0, 0, 0, 0, 0};
     return send(clientFD, response, RESPONSE_LEN, 0); 
 }
@@ -157,8 +157,7 @@ static int processConnectionRequest(ClientContext* clientContext, DnsResolver* d
     logMessage(log, LOG_DEBUG, "Send dns request");
 
     if (!clientContext->isDomainResolved) {
-        sendDnsRequest(dnsResolver, clientContext, domain, log);
-        return 0;
+        return sendDnsRequest(dnsResolver, clientContext, domain, log);
     }
     logMessage(log, LOG_DEBUG, "Connect to target server");
 
@@ -184,9 +183,7 @@ int handleClientState(ClientContext* clientContext, int epollFD, DnsResolver* dn
         if (processConnectionRequest(clientContext, dnsResolver, log) == -1) {
             return -1;
         }
-        addServerFDToEpollSet(epollFD, clientContext);
-        
-        return 0;
+        return addServerFDToEpollSet(epollFD, clientContext);;
     } 
     logMessage(log, LOG_ERROR, "Unknown state: %d", clientContext->state);
     return -1;

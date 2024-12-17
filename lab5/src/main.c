@@ -8,6 +8,17 @@
 
 #define MAX_PORT_VALUE 65535
 
+
+// TODO: 1. fix connect blocking (add separate event)
+// TODO: 2. fix hello, connect fully reading
+// TODO: 3. add dns failure client response
+// TODO: 4. think of dns request resending
+// TODO: 5. free context if and only if both nodes tcp-shutdown the connection
+// TODO: 6. replace memset to non danger
+// TODO: 7. dynamic buffer for domain
+// TODO: 8. fix spining in forward traffic
+// TODO: 9. think of unifying forward traffic
+
 int main(int argc, char** argv) {
 	Logger* log = createLogger("log.txt", LOG_DEBUG, 1);
 	if (argc != 2) {

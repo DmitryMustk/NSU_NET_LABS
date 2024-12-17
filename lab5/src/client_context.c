@@ -35,7 +35,9 @@ void freeEpollDataWrapper(EpollDataWrapper* epollDataWrapper) {
     if (epollDataWrapper == NULL) {
         return;
     }
-    freeClientContext(epollDataWrapper->clientContextPtr);
+    if (epollDataWrapper->clientContextPtr != NULL) {
+        freeClientContext(epollDataWrapper->clientContextPtr);
+    }  
     free(epollDataWrapper);
 }
 

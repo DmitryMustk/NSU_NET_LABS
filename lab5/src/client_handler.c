@@ -123,6 +123,5 @@ int acceptClient(int serverFD, int epollFD, Logger *log) {
 		return -1;
 	}
 
-    addToEpollSetByPtr(epollFD, clientFD, epollDataWrapper, EPOLLIN | EPOLLET);
-	return 0;
+	return addToEpollSetByPtr(epollFD, clientFD, epollDataWrapper, EPOLLIN | EPOLLET);
 }
